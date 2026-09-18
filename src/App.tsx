@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ArrowRight, Check, Instagram, MapPin, Menu, Minus, Plus, ShoppingBag, X } from 'lucide-react';
 import { formatPrice, instagramUrl, pickupAddress, products as initialProducts, type Category, type Product, type StoreSettings } from './catalog';
 import { cartTotal, loadCart, saveCart, type CartItem } from './lib/cart';
-import { orderHref, rememberOrder } from './lib/orderLinks';
+import AccountAccess from './account/AccountAccess';
+import { useAccount } from './account/AccountContext';
 import ExperiencePage from './ExperiencePage';
 
 type Filter = 'Todos' | Category;
@@ -62,10 +63,9 @@ function ProductDialog({ product, onClose, onAdd }: { product: Product; onClose:
 }
 
 function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete }: { cart: CartItem[]; products: Product[]; settings: StoreSettings; onClose: () => void; onQuantity: (id: string, quantity: number) => void; onComplete: () => void }) {
+  const { customer, loading: accountLoading, expire } = useAccount();
   const [step, setStep] = useState<'cart' | 'checkout' | 'success'>('cart');
   const [fulfillment, setFulfillment] = useState<Fulfillment>(settings.pickupEnabled ? 'pickup' : 'delivery');
-  const [name, setName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
   const [address, setAddress] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState('');
@@ -73,7 +73,6 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
   const [orderNumber, setOrderNumber] = useState('');
   const [trackingHref, setTrackingHref] = useState('');
   const [confirmationMessage, setConfirmationMessage] = useState('');
-  const nameRef = useRef<HTMLInputElement>(null);
   const total = cartTotal(cart, products);
   const phoneDigits = settings.whatsapp.replace(/\D/g, '');
   const count = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -83,8 +82,6 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [onClose]);
-
-  useEffect(() => { if (step === 'checkout') nameRef.current?.focus(); }, [step]);
 
   function orderMessage() {
     const list = cart.map((item) => {
@@ -99,8 +96,8 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
       `Subtotal dos doces: ${formatPrice(total)}`,
       `Recebimento: ${fulfillment === 'pickup' ? 'Retirada na loja' : 'Entrega por parceiro (frete a confirmar)'}`,
       fulfillment === 'delivery' ? `Endereço: ${address.trim()}` : `Retirada: ${settings.pickupAddress}`,
-      `Nome: ${name.trim()}`,
-      `Telefone: ${customerPhone.trim()}`,
+      `Nome: ${customer?.name || ''}`,
+      `Telefone: ${customer?.phone || ''}`,
       notes.trim() ? `Observações: ${notes.trim()}` : '',
       '',
       'Aguardo a confirmação de disponibilidade, prazo e valor final. Vou acompanhar e pagar pelo site.',
@@ -110,8 +107,8 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
   async function sendOrder(event: React.FormEvent) {
     event.preventDefault();
     setError('');
-    if (!name.trim() || customerPhone.replace(/\D/g, '').length < 10) {
-      setError('Preencha seu nome e um telefone com DDD.');
+    if (!customer) {
+      setError('Entre na sua conta para finalizar o pedido.');
       return;
     }
     if (fulfillment === 'delivery' && address.trim().length < 12) {
@@ -120,14 +117,13 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
     }
     setSubmitting(true);
     try {
-      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, phone: customerPhone, fulfillment, address, notes, items: cart, expectedTotalCents: total }) });
+      const response = await fetch('/api/orders', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ fulfillment, address, notes, items: cart, expectedTotalCents: total }) });
       const result = await response.json().catch(() => ({ error: 'Resposta inválida do servidor.' }));
+      if (response.status === 401) expire();
       if (!response.ok) throw new Error(result.error || 'Não foi possível registrar o pedido.');
       setConfirmationMessage(orderMessage());
       setOrderNumber(result.number);
-      const saved = { id: result.id, number: result.number, token: result.token };
-      rememberOrder(saved);
-      setTrackingHref(orderHref(saved));
+      setTrackingHref(`/pedido/${encodeURIComponent(result.id)}`);
       setStep('success');
       onComplete();
     } catch (cause) {
@@ -155,7 +151,7 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
           <button type="button" className="icon-close" onClick={onClose} aria-label="Fechar carrinho"><X size={22} /></button>
         </div>
         {step === 'checkout' && <button className="back-link" type="button" onClick={() => setStep('cart')}><ArrowLeft size={16} /> Voltar ao carrinho</button>}
-        {step === 'success' ? <div className="order-success"><span className="order-success-mark"><Check size={42} /></span><span className="eyebrow dark">SOLICITAÇÃO REGISTRADA</span><h3>Seu doce já está no nosso radar.</h3><p>Pedido <strong>{orderNumber}</strong> recebido. A Street Doces vai confirmar disponibilidade, prazo e, se for entrega, o valor do frete pelo contato informado.</p><p className="success-small">Acompanhe o pedido e pague por Pix nesta página quando a loja confirmar o valor final. Seu link foi salvo neste navegador.</p>{trackingHref && <a className="button button-dark full" href={trackingHref}>Acompanhar e pagar <ArrowRight size={18} /></a>}{phoneDigits.length === 13 && <a className="button button-dark full" href={`https://wa.me/${phoneDigits}?text=${encodeURIComponent(`Olá! Acabei de registrar o pedido ${orderNumber}. ${confirmationMessage}`)}`} target="_blank" rel="noopener noreferrer">Conversar no WhatsApp <ArrowRight size={18} /></a>}<button className="text-link" type="button" onClick={onClose}>Continuar explorando <ArrowRight size={17} /></button></div> : step === 'cart' ? (
+        {step === 'success' ? <div className="order-success"><span className="order-success-mark"><Check size={42} /></span><span className="eyebrow dark">SOLICITAÇÃO REGISTRADA</span><h3>Seu doce já está no nosso radar.</h3><p>Pedido <strong>{orderNumber}</strong> recebido. A Street Doces vai confirmar disponibilidade, prazo e, se for entrega, o valor do frete pelo contato informado.</p><p className="success-small">O pedido está vinculado à sua conta. Você pode acompanhar e pagar por Pix após a confirmação da loja.</p>{trackingHref && <a className="button button-dark full" href={trackingHref}>Acompanhar e pagar <ArrowRight size={18} /></a>}{phoneDigits.length === 13 && <a className="button button-dark full" href={`https://wa.me/${phoneDigits}?text=${encodeURIComponent(`Olá! Acabei de registrar o pedido ${orderNumber}. ${confirmationMessage}`)}`} target="_blank" rel="noopener noreferrer">Conversar no WhatsApp <ArrowRight size={18} /></a>}<button className="text-link" type="button" onClick={onClose}>Continuar explorando <ArrowRight size={17} /></button></div> : step === 'cart' ? (
           <>
             <div className="drawer-scroll">
               {cart.length === 0 ? <div className="empty-cart"><ShoppingBag size={42} strokeWidth={1.2} /><h3>Seu carrinho pede um doce.</h3><p>Escolha seus favoritos e a gente cuida do resto.</p><button className="text-link" type="button" onClick={onClose}>Explorar o cardápio <ArrowRight size={17} /></button></div> : cart.map((item) => {
@@ -170,6 +166,8 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
             </div>
             {cart.length > 0 && <div className="drawer-bottom"><div className="subtotal"><span>Subtotal <small>{count} {count === 1 ? 'item' : 'itens'}</small></span><strong>{formatPrice(total)}</strong></div><p>Entrega, quando escolhida, é cotada e confirmada antes do pagamento.</p><button className="button button-dark full" type="button" onClick={() => setStep('checkout')}>Continuar pedido <ArrowRight size={18} /></button></div>}
           </>
+        ) : !customer ? (
+          <div className="drawer-scroll checkout-auth">{accountLoading ? <p>Verificando sua conta…</p> : <AccountAccess compact />}</div>
         ) : (
           <form className="checkout-form" onSubmit={sendOrder}>
             <div className="drawer-scroll checkout-scroll">
@@ -180,8 +178,7 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
               </div>
               {fulfillment === 'pickup' ? <p className="fulfillment-note"><MapPin size={16} /> {settings.pickupAddress}. O horário é combinado com a loja.</p> : <><label className="field-label" htmlFor="address">Endereço completo *</label><textarea id="address" placeholder="Rua, número, bairro, cidade, CEP e complemento" value={address} onChange={(event) => setAddress(event.target.value)} rows={3} required /><p className="fulfillment-note">{settings.deliveryNotice} Nenhum frete é cobrado agora.</p></>}
               <div className="checkout-intro second"><span className="step-number">02 / 02</span><h3>Pra gente falar com você</h3></div>
-              <label className="field-label" htmlFor="name">Seu nome *</label><input ref={nameRef} id="name" autoComplete="name" value={name} onChange={(event) => setName(event.target.value)} placeholder="Como podemos te chamar?" required />
-              <label className="field-label" htmlFor="phone">Seu WhatsApp com DDD *</label><input id="phone" autoComplete="tel" inputMode="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="(31) 99999-9999" required />
+              <div className="checkout-account"><strong>{customer.name}</strong><span>{customer.phone} · {customer.email}</span><small>Seu pedido ficará associado a esta conta.</small></div>
               <label className="field-label" htmlFor="notes">Observações <span>(opcional)</span></label><textarea id="notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={2} placeholder="Presente, horário preferido, alguma dúvida..." />
               <div className="order-summary"><span>Doces</span><strong>{formatPrice(total)}</strong><span>{fulfillment === 'pickup' ? 'Retirada' : 'Entrega'}</span><strong>{fulfillment === 'pickup' ? 'Grátis' : 'A confirmar'}</strong><div className="summary-total"><span>Subtotal</span><strong>{formatPrice(total)}</strong></div></div>
               <p className="checkout-disclaimer">Vamos registrar sua solicitação. A Street Doces confirma disponibilidade e valor final; então você poderá pagar por Pix na página de acompanhamento.</p>
@@ -196,6 +193,7 @@ function CartDrawer({ cart, products, settings, onClose, onQuantity, onComplete 
 }
 
 export default function App() {
+  const { customer } = useAccount();
   const [filter, setFilter] = useState<Filter>('Todos');
   const [products, setProducts] = useState<Product[]>(initialProducts);
   const [settings, setSettings] = useState<StoreSettings>(initialSettings);
@@ -241,7 +239,7 @@ export default function App() {
       <header className="site-header" id="inicio">
         <Logo light />
         <nav className={`nav-links ${menuOpen ? 'nav-open' : ''}`} aria-label="Navegação principal">
-          <a href="#cardapio" onClick={() => setMenuOpen(false)}>Cardápio</a><a href="#sobre" onClick={() => setMenuOpen(false)}>Nossa essência</a><a href="#como-funciona" onClick={() => setMenuOpen(false)}>Como pedir</a><a href="/acompanhar" onClick={() => setMenuOpen(false)}>Acompanhar pedido</a>
+          <a href="#cardapio" onClick={() => setMenuOpen(false)}>Cardápio</a><a href="#sobre" onClick={() => setMenuOpen(false)}>Nossa essência</a><a href="#como-funciona" onClick={() => setMenuOpen(false)}>Como pedir</a><a href="/acompanhar" onClick={() => setMenuOpen(false)}>{customer ? 'Minha conta e pedidos' : 'Entrar / acompanhar'}</a>
         </nav>
         <div className="header-actions"><button className="menu-button" type="button" aria-label="Abrir menu" onClick={() => setMenuOpen(!menuOpen)}>{menuOpen ? <X size={23} /> : <Menu size={23} />}</button><button className="cart-trigger" type="button" onClick={() => setCartOpen(true)} aria-label={`Abrir carrinho com ${cartCount} ${cartCount === 1 ? 'item' : 'itens'}`}><ShoppingBag size={19} /><span className="cart-label">Meu carrinho</span><span className="cart-badge">{cartCount}</span></button></div>
       </header>

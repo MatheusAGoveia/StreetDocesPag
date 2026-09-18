@@ -63,9 +63,18 @@ test("função Vercel preserva rotas relativas e consulta de acompanhamento", as
   const catalog = await handleVercelRequest(new Request(`${base}storefront`), storage);
   assert.equal(catalog.status, 200);
   assert.equal((await catalog.json()).products.length, 5);
+  const registered = await handleVercelRequest(new Request(`${base}account/register`, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      name: "Cliente Vercel", email: "cliente@vercel.test", phone: "31999999999",
+      password: "senha-de-teste-muito-forte",
+    }),
+  }), storage);
+  assert.equal(registered.status, 200);
+  const cookie = registered.headers.get("set-cookie").split(";")[0];
   const created = await handleVercelRequest(new Request(`${base}orders`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", cookie },
     body: JSON.stringify({
       name: "Cliente Vercel", phone: "31999999999", fulfillment: "pickup",
       items: [{ id: "miss-sensacao", quantity: 1 }],
@@ -74,7 +83,7 @@ test("função Vercel preserva rotas relativas e consulta de acompanhamento", as
   assert.equal(created.status, 201);
   const order = await created.json();
   const tracked = await handleVercelRequest(
-    new Request(`${base}orders/${order.id}&token=${order.token}`), storage,
+    new Request(`${base}orders/${order.id}`, { headers: { cookie } }), storage,
   );
   assert.equal(tracked.status, 200);
   assert.equal((await tracked.json()).order.number, order.number);

@@ -57,7 +57,8 @@ type Order = {
   paymentStatus: PaymentStatus;
   paymentReportedAt?: string;
   payerName?: string;
-  customer: { name: string; phone: string };
+  customerId?: string;
+  customer: { name: string; phone: string; email?: string };
   fulfillment: "pickup" | "delivery";
   address: string;
   notes: string;
@@ -1179,17 +1180,21 @@ function Customers({ orders }: { orders: Order[] }) {
       {
         name: string;
         phone: string;
+        email?: string;
+        id: string;
         orders: number;
         total: number;
         last: string;
       }
     >();
     orders.forEach((order) => {
-      const key = order.customer.phone.replace(/\D/g, "");
+      const key = order.customerId || order.customer.phone.replace(/\D/g, "");
       const old = map.get(key);
       map.set(key, {
         name: order.customer.name,
         phone: order.customer.phone,
+        email: order.customer.email,
+        id: key,
         orders: (old?.orders || 0) + 1,
         total: (old?.total || 0) + order.subtotalCents,
         last:
@@ -1199,7 +1204,7 @@ function Customers({ orders }: { orders: Order[] }) {
     return [...map.values()].sort((a, b) => b.last.localeCompare(a.last));
   }, [orders]);
   const visible = customers.filter((customer) =>
-    `${customer.name} ${customer.phone}`
+    `${customer.name} ${customer.phone} ${customer.email || ""}`
       .toLowerCase()
       .includes(query.toLowerCase()),
   );
@@ -1221,7 +1226,7 @@ function Customers({ orders }: { orders: Order[] }) {
             <Search size={18} />
             <input
               aria-label="Buscar clientes"
-              placeholder="Buscar nome ou telefone"
+              placeholder="Buscar nome, e-mail ou telefone"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
             />
@@ -1241,9 +1246,10 @@ function Customers({ orders }: { orders: Order[] }) {
               </thead>
               <tbody>
                 {visible.map((customer) => (
-                  <tr key={customer.phone}>
+                  <tr key={customer.id}>
                     <td>
                       <strong>{customer.name}</strong>
+                      {customer.email && <small style={{ display: "block", marginTop: 4 }}>{customer.email}</small>}
                     </td>
                     <td>{customer.phone}</td>
                     <td>{customer.orders}</td>

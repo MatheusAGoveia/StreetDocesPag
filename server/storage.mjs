@@ -79,9 +79,10 @@ export async function blobStorage() {
       return result.modified;
     },
     async list(prefix) {
-      return (await store.list({ prefix: safeKey(prefix) })).blobs.map(
-        (entry) => entry.key,
-      );
+      const keys = [];
+      for await (const page of store.list({ prefix: safeKey(prefix), paginate: true }))
+        keys.push(...page.blobs.map((entry) => entry.key));
+      return keys;
     },
     delete: (key) => store.delete(safeKey(key)),
   };

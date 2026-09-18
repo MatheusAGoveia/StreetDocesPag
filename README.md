@@ -1,6 +1,6 @@
 # Street Doces — loja e gestão
 
-Loja online da Street Doces com catálogo, carrinho, pedido por retirada ou entrega, acompanhamento em `/acompanhar`, pagamento Pix no site e painel administrativo em `/admin`. O visual da vitrine usa React, GSAP e ScrollTrigger. A API valida preços e grava cada solicitação antes de mostrar o número do pedido.
+Loja online da Street Doces com catálogo, carrinho, conta de cliente, pedido por retirada ou entrega, acompanhamento em `/acompanhar`, pagamento Pix no site e painel administrativo em `/admin`. O visual da vitrine usa React, GSAP e ScrollTrigger. A API valida preços e grava cada solicitação antes de mostrar o número do pedido.
 
 ## Rodar localmente
 
@@ -21,14 +21,16 @@ Os dados locais são separados dos dados publicados na Vercel ou no Netlify; pub
 - **Pedidos:** busca, filtro, detalhes, itens, contato, histórico, status, avisos de Pix para conferir, parceiro e frete; exportação CSV.
 - **Produtos:** criação e edição de nome, categoria, descrição, preço, cor, etiqueta, visibilidade e imagem. Aceita upload JPG, PNG e WebP de até 3 MB ou URL HTTPS.
 - **Estoque:** controle opcional por produto, quantidade e limite de alerta. O pedido é uma solicitação e não baixa unidades automaticamente; confirme disponibilidade antes de aceitar.
-- **Clientes:** lista derivada de pedidos, com telefone, frequência e histórico de valores solicitados.
+- **Clientes:** lista derivada de pedidos, agrupada pela conta nos novos pedidos, com e-mail, telefone, frequência e histórico de valores solicitados.
 - **Configurações:** identidade, Instagram, WhatsApp, chave Pix, endereço, retirada, entrega e pausa dos novos pedidos.
 
 O painel recarrega pedidos automaticamente enquanto a aba de operação está aberta. A autenticação usa senha com `scrypt`, cookie assinado `HttpOnly` e sessão com duração de oito horas. A API exige login para ler dados de clientes ou alterar produtos, pedidos e configurações. O preço recebido do navegador nunca é usado para calcular o pedido.
 
 ## Acompanhamento e Pix
 
-Depois de registrar o pedido, o cliente recebe um link privado salvo no navegador. Também pode recuperá-lo em `/acompanhar` com o número do pedido e o mesmo telefone informado no checkout. A página mostra status, histórico, itens, forma de recebimento e valor. O link contém um token aleatório; pedidos e dados de clientes não ficam públicos por número ou ID.
+Antes de finalizar o primeiro pedido, o cliente cria uma conta com nome, WhatsApp, e-mail e senha (mínimo 12 caracteres), ou entra em uma conta existente. O cadastro inicia uma sessão automaticamente. A senha é guardada como hash `scrypt`; a sessão usa um token aleatório em cookie `HttpOnly`, `SameSite=Lax`, válido por 14 dias e revogado no logout. Novos pedidos recebem o ID da conta no servidor; a página `/acompanhar` lista somente os pedidos daquele cliente, inclusive em outro dispositivo após o login. O número e o ID isolados não dão acesso ao pedido.
+
+Pedidos antigos, feitos antes das contas, mantêm seus links privados. Depois de entrar, o cliente pode vinculá-los à conta em `/acompanhar` com o número e telefone usados na compra. A página de acompanhamento mostra status, histórico, itens, forma de recebimento e valor. O cadastro não verifica o controle do e-mail e ainda não oferece recuperação de senha; configure um canal de suporte para esses casos antes de divulgar as contas.
 
 Quando a equipe confirma o pedido, o Pix fica disponível. Para entrega, a equipe precisa informar o frete no painel antes disso. O valor do QR Code e do código Copia e Cola é calculado no servidor a partir dos itens e do frete. A chave inicial é `matheusaagd2@gmail.com` e pode ser alterada em **Configurações**. A chave usada fica registrada em cada pedido novo; confira se ela está cadastrada na conta que deve receber antes de divulgar a loja.
 
@@ -38,7 +40,7 @@ O botão **Já fiz o Pix** coloca o pagamento em **Pix a conferir**. Isso é ape
 
 O site em `street-doces-pag.vercel.app` usa a função em `api/handler.mjs`. O `vercel.json` encaminha `/api/*` para essa função e as páginas `/admin`, `/acompanhar` e `/pedido/...` para o aplicativo React. O frontend sempre chama `/api/...` no próprio domínio; não há endpoint de `localhost` no código publicado.
 
-No projeto da Vercel, crie e conecte um **Vercel Blob privado** em **Storage → Create Database → Blob → Private**, incluindo o ambiente **Production**. Pedidos, telefones, endereços e dados de pagamento precisam ficar em armazenamento privado. A conexão fornece `BLOB_STORE_ID` e autenticação OIDC automaticamente; o SDK também aceita `BLOB_READ_WRITE_TOKEN` caso o projeto utilize esse modo. A loja não aceita pedidos enquanto o armazenamento não estiver configurado.
+No projeto da Vercel, crie e conecte um **Vercel Blob privado** em **Storage → Create Database → Blob → Private**, incluindo o ambiente **Production**. Contas, hashes de senha, sessões, pedidos, telefones, endereços e dados de pagamento precisam ficar em armazenamento privado. A conexão fornece `BLOB_STORE_ID` e autenticação OIDC automaticamente; o SDK também aceita `BLOB_READ_WRITE_TOKEN` caso o projeto utilize esse modo. A loja não permite cadastro ou pedidos enquanto o armazenamento não estiver configurado.
 
 Configure também estas três variáveis em **Settings → Environment Variables** para **Production**:
 

@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState, type FormEvent } from 'react';
 import { ArrowLeft, ArrowRight, Check, Clock3, Copy, MapPin, PackageCheck, RefreshCw, ShieldCheck, ShoppingBag, Truck, XCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatPrice } from './catalog';
+import AccountAccess from './account/AccountAccess';
+import { useAccount } from './account/AccountContext';
 import { orderHref, rememberOrder, savedOrders, type SavedOrder } from './lib/orderLinks';
 import './tracking.css';
 
@@ -17,6 +19,7 @@ type Order = {
   paymentReportedAt: string | null;
   pix: { key: string; txid: string; amountCents: number; payload: string } | null;
 };
+type AccountOrder = { id: string; number: string; createdAt: string; status: Status; paymentStatus: PaymentStatus; totalCents: number; fulfillment: 'pickup' | 'delivery' };
 
 const statuses: { key: Status; label: string; note: string }[] = [
   { key: 'new', label: 'Recebido', note: 'Seu pedido chegou à Street.' },
@@ -31,7 +34,7 @@ const dateTime = (date: string) => new Intl.DateTimeFormat('pt-BR', { dateStyle:
 
 async function responseJson<T>(response: Response): Promise<T> {
   const result = await response.json().catch(() => ({ error: 'Resposta inválida do servidor.' }));
-  if (!response.ok) throw new Error(result.error || 'Não foi possível carregar o pedido.');
+  if (!response.ok) throw Object.assign(new Error(result.error || 'Não foi possível carregar o pedido.'), { status: response.status });
   return result as T;
 }
 
@@ -48,11 +51,26 @@ function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function Lookup() {
+  const { customer, loading: accountLoading, logout } = useAccount();
   const [number, setNumber] = useState('');
   const [phone, setPhone] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [orders, setOrders] = useState<AccountOrder[]>([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [recent] = useState(savedOrders);
+  useEffect(() => {
+    if (!customer) { setOrders([]); return; }
+    let active = true;
+    setOrdersLoading(true);
+    fetch('/api/account/orders', { cache: 'no-store' })
+      .then((response) => responseJson<{ orders: AccountOrder[] }>(response))
+      .then((result) => { if (active) setOrders(result.orders); })
+      .catch((cause) => { if (active) setError(cause instanceof Error ? cause.message : 'Não foi possível carregar seus pedidos.'); })
+      .finally(() => { if (active) setOrdersLoading(false); });
+    return () => { active = false; };
+  }, [customer?.id]);
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError('');
     try {
@@ -61,7 +79,11 @@ function Lookup() {
         body: JSON.stringify({ number: number.trim(), phone: phone.trim() }),
       }));
       rememberOrder(result);
-      window.location.assign(orderHref(result));
+      await responseJson(await fetch('/api/account/orders/claim', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: result.id, token: result.token }),
+      }));
+      window.location.assign(`/pedido/${encodeURIComponent(result.id)}`);
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível encontrar o pedido.'); }
     finally { setBusy(false); }
   }
@@ -73,20 +95,26 @@ function Lookup() {
         <p>Veja cada etapa, confira o valor final e faça o Pix por aqui quando seu pedido estiver confirmado.</p>
         <div className="lookup-orbit" aria-hidden="true"><span>✳</span><small>DO PEDIDO<br />À PRIMEIRA<br />MORDIDA</small></div>
       </section>
-      <section className="lookup-card">
-        <span className="tracking-kicker">ACOMPANHAMENTO / STREET DOCES</span>
-        <h2>Seu pedido<br />está aqui.</h2>
-        <p>Informe o número recebido no final da compra e o mesmo telefone usado no pedido.</p>
-        <form onSubmit={submit}>
-          <label htmlFor="order-number">Número do pedido</label>
-          <input id="order-number" autoComplete="off" placeholder="SD-260917-ABCD" value={number} onChange={(event) => setNumber(event.target.value.toUpperCase())} required />
-          <label htmlFor="order-phone">Telefone com DDD</label>
-          <input id="order-phone" inputMode="tel" autoComplete="tel" placeholder="(31) 99999-9999" value={phone} onChange={(event) => setPhone(event.target.value)} required />
-          {error && <p className="tracking-error" role="alert">{error}</p>}
-          <button className="tracking-primary" type="submit" disabled={busy}>{busy ? 'Buscando pedido…' : 'Acompanhar pedido'} <ArrowRight size={18} /></button>
-        </form>
-        {recent.length > 0 && <div className="lookup-recent"><span>SEUS PEDIDOS NESTE NAVEGADOR</span>{recent.map((item) => <a href={orderHref(item)} key={item.id}>{item.number} <ArrowRight size={16} /></a>)}</div>}
-      </section>
+      {accountLoading ? <section className="lookup-card"><p>Verificando sua conta…</p></section> : !customer ? <AccountAccess /> : <section className="lookup-card account-orders-card">
+        <span className="tracking-kicker">MINHA CONTA / STREET DOCES</span>
+        <h2>Oi, {customer.name.split(' ')[0]}<span>.</span></h2>
+        <p>Seus pedidos ficam vinculados à sua conta e podem ser acompanhados em qualquer dispositivo.</p>
+        <div className="account-identity"><span>{customer.email}</span><button type="button" disabled={logoutBusy} onClick={async () => { setLogoutBusy(true); try { await logout(); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível sair.'); } finally { setLogoutBusy(false); } }}>Sair da conta</button></div>
+        <div className="account-order-list"><span className="tracking-kicker">PEDIDOS DA SUA CONTA</span>
+          {ordersLoading ? <p>Carregando pedidos…</p> : orders.length ? orders.map((item) => <a key={item.id} href={`/pedido/${encodeURIComponent(item.id)}`} className="account-order-link"><span><strong>{item.number}</strong><small>{dateTime(item.createdAt)} · {statuses.find((status) => status.key === item.status)?.label}</small></span><b>{formatPrice(item.totalCents)}</b><ArrowRight size={18} /></a>) : <p>Ainda não há pedidos nesta conta. <a href="/">Escolha seu primeiro doce.</a></p>}
+        </div>
+        <div className="legacy-claim"><span className="tracking-kicker">PEDIDO ANTERIOR</span><h3>Tem um pedido antigo?</h3><p>Vincule um pedido feito antes da criação da sua conta usando o número e telefone cadastrados nele.</p>
+          <form onSubmit={submit}>
+            <label htmlFor="order-number">Número do pedido</label>
+            <input id="order-number" autoComplete="off" placeholder="SD-260917-ABCD" value={number} onChange={(event) => setNumber(event.target.value.toUpperCase())} required />
+            <label htmlFor="order-phone">Telefone com DDD</label>
+            <input id="order-phone" inputMode="tel" autoComplete="tel" placeholder="(31) 99999-9999" value={phone} onChange={(event) => setPhone(event.target.value)} required />
+            {error && <p className="tracking-error" role="alert">{error}</p>}
+            <button className="tracking-primary" type="submit" disabled={busy}>{busy ? 'Vinculando…' : 'Vincular pedido'} <ArrowRight size={18} /></button>
+          </form>
+          {recent.length > 0 && <div className="lookup-recent"><span>LINKS ANTIGOS NESTE NAVEGADOR</span>{recent.map((item) => <a href={orderHref(item)} key={item.id}>{item.number} <ArrowRight size={16} /></a>)}</div>}
+        </div>
+      </section>}
     </main>
   </Shell>;
 }
@@ -102,7 +130,7 @@ function StatusTimeline({ order }: { order: Order }) {
   </li>)}</ol>;
 }
 
-function Payment({ order, token, onUpdate }: { order: Order; token: string; onUpdate: (order: Order) => void }) {
+function Payment({ order, token, onUpdate }: { order: Order; token: string | null; onUpdate: (order: Order) => void }) {
   const [copied, setCopied] = useState<'payload' | 'key' | null>(null);
   const [busy, setBusy] = useState(false);
   const [payerName, setPayerName] = useState('');
@@ -142,27 +170,37 @@ function Payment({ order, token, onUpdate }: { order: Order; token: string; onUp
   </section>;
 }
 
-function OrderView({ id, token }: { id: string; token: string }) {
+function OrderView({ id, token }: { id: string; token: string | null }) {
+  const { customer, loading: accountLoading, expire } = useAccount();
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refreshing, setRefreshing] = useState(false);
   const reload = useCallback(async (initial = false) => {
-    if (!initial) setRefreshing(true);
+    if (initial) setLoading(true);
+    else setRefreshing(true);
     try {
-      const result = await responseJson<{ order: Order }>(await fetch(`/api/orders/${encodeURIComponent(id)}?token=${encodeURIComponent(token)}`, { cache: 'no-store' }));
+      const url = `/api/orders/${encodeURIComponent(id)}${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+      const result = await responseJson<{ order: Order }>(await fetch(url, { cache: 'no-store' }));
       setOrder(result.order); setError('');
-      rememberOrder({ id, token, number: result.order.number });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o pedido.'); }
+      if (token) rememberOrder({ id, token, number: result.order.number });
+    } catch (cause) {
+      if (!token && (cause as { status?: number }).status === 401) expire();
+      setOrder(null);
+      setError(cause instanceof Error ? cause.message : 'Não foi possível carregar o pedido.');
+    }
     finally { setLoading(false); setRefreshing(false); }
   }, [id, token]);
   useEffect(() => {
+    if (!token && accountLoading) return;
+    if (!token && !customer) { setLoading(false); return; }
     void reload(true);
     const timer = window.setInterval(() => { if (document.visibilityState === 'visible') void reload(); }, 25000);
     const visible = () => { if (document.visibilityState === 'visible') void reload(); };
     document.addEventListener('visibilitychange', visible);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', visible); };
-  }, [reload]);
+  }, [reload, token, accountLoading, customer?.id]);
+  if (!token && !accountLoading && !customer) return <Shell><main className="tracking-lookup"><section className="lookup-editorial"><span className="tracking-kicker">ACOMPANHAMENTO</span><h1>Seu pedido<span>.</span></h1><p>Entre na sua conta para ver os detalhes e acompanhar o pagamento.</p></section><AccountAccess /></main></Shell>;
   if (loading) return <Shell><main className="tracking-loading"><span className="tracking-spinner" /> Carregando seu pedido…</main></Shell>;
   if (!order) return <Shell><main className="tracking-loading"><h1>Não achamos esse pedido.</h1><p>{error}</p><a href="/acompanhar" className="tracking-primary">Buscar meu pedido <ArrowRight size={17} /></a></main></Shell>;
   const status = statuses.find((item) => item.key === order.status)!;
@@ -188,5 +226,5 @@ export default function TrackingApp() {
   }, []);
   const match = window.location.pathname.match(/^\/pedido\/([a-f0-9-]{36})$/);
   const token = new URLSearchParams(window.location.search).get('token');
-  return match && token ? <OrderView id={match[1]} token={token} /> : <Lookup />;
+  return match ? <OrderView id={match[1]} token={token} /> : <Lookup />;
 }

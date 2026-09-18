@@ -1,4 +1,5 @@
 import {
+  createHash,
   createHmac,
   randomBytes,
   randomUUID,
@@ -135,6 +136,52 @@ async function ordersOf(storage) {
   return orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 const newTrackingToken = () => randomBytes(24).toString("base64url");
+const customerSessionDays = 14;
+const accountKey = (address) =>
+  `customers/${createHash("sha256").update(address).digest("hex")}`;
+const customerSessionKey = (token) =>
+  `customer-sessions/${createHash("sha256").update(token).digest("hex")}`;
+const customerCookie = (request, token, maxAge) => {
+  const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return `sd_customer=${token}; HttpOnly; Path=/api; SameSite=Lax; Max-Age=${maxAge}${secure}`;
+};
+const publicCustomer = (customer) => ({
+  id: customer.id,
+  name: customer.name,
+  email: customer.email,
+  phone: customer.phone,
+});
+function customerPasswordValid(password, customer) {
+  try {
+    const [salt, expected] = customer.passwordHash.split(":");
+    const actual = scryptSync(String(password), salt, 64);
+    const bytes = Buffer.from(expected, "hex");
+    return bytes.length === actual.length && timingSafeEqual(actual, bytes);
+  } catch {
+    return false;
+  }
+}
+async function customerSession(request, storage) {
+  const token = request.headers.get("cookie")?.match(/(?:^|;\s*)sd_customer=([A-Za-z0-9_-]+)/)?.[1];
+  if (!token || token.length !== 43) return null;
+  const session = await storage.get(customerSessionKey(token));
+  if (!session || session.expiresAt <= Date.now()) return null;
+  const customer = await storage.get(session.accountKey);
+  return customer?.id === session.customerId ? customer : null;
+}
+async function startCustomerSession(request, storage, customer, key) {
+  const token = randomBytes(32).toString("base64url");
+  const maxAge = customerSessionDays * 24 * 60 * 60;
+  const created = await storage.set(customerSessionKey(token), {
+    accountKey: key,
+    customerId: customer.id,
+    expiresAt: Date.now() + maxAge * 1000,
+  }, null);
+  if (!created) throw new Error("Não foi possível abrir a sessão.");
+  return message({ customer: publicCustomer(customer) }, 200, {
+    "set-cookie": customerCookie(request, token, maxAge),
+  });
+}
 function trackingValid(order, token) {
   if (!order?.trackingToken || typeof token !== "string") return false;
   const given = Buffer.from(token);
@@ -266,6 +313,103 @@ export async function handleApi(request, storage, pathOverride) {
         },
       });
     }
+    if (path === "/api/account/register" && method === "POST") {
+      if (rateLimited(request, "customer-register", 8, 60 * 60 * 1000))
+        return fail("Muitas tentativas. Tente mais tarde.", 429);
+      const data = await bodyOf(request);
+      const name = clean(data.name, 100);
+      const address = clean(data.email, 254).toLowerCase();
+      const phone = clean(data.phone, 30);
+      const digits = phone.replace(/\D/g, "");
+      const password = data.password;
+      if (name.length < 2 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address) ||
+          digits.length < 10 || digits.length > 13 ||
+          typeof password !== "string" || password.length < 12 || password.length > 128)
+        return fail("Informe nome, e-mail, telefone com DDD e uma senha de 12 a 128 caracteres.");
+      const key = accountKey(address);
+      const salt = randomBytes(16).toString("hex");
+      const customer = {
+        id: randomUUID(), name, email: address, phone,
+        passwordHash: `${salt}:${scryptSync(password, salt, 64).toString("hex")}`,
+        createdAt: new Date().toISOString(),
+      };
+      if (!(await storage.set(key, customer, null)))
+        return fail("Já existe uma conta com este e-mail. Entre com sua senha.", 409);
+      return startCustomerSession(request, storage, customer, key);
+    }
+    if (path === "/api/account/login" && method === "POST") {
+      if (rateLimited(request, "customer-login", 20, 15 * 60 * 1000))
+        return fail("Muitas tentativas. Aguarde alguns minutos.", 429);
+      const data = await bodyOf(request);
+      const address = clean(data.email, 254).toLowerCase();
+      const key = accountKey(address);
+      const { data: customer, etag } = await storage.getWithEtag(key);
+      const now = Date.now();
+      if (customer?.lockedUntil > now)
+        return fail("Acesso temporariamente bloqueado. Tente novamente em 15 minutos.", 429);
+      if (!customer || !customerPasswordValid(data.password, customer)) {
+        if (customer) {
+          const count = customer.failedSince && now - customer.failedSince < 15 * 60 * 1000
+            ? (customer.failedLogins || 0) + 1 : 1;
+          await storage.set(key, {
+            ...customer, failedLogins: count, failedSince: count === 1 ? now : customer.failedSince,
+            lockedUntil: count >= 5 ? now + 15 * 60 * 1000 : null,
+          }, etag);
+        }
+        return fail("E-mail ou senha incorretos.", 401);
+      }
+      if (customer.failedLogins || customer.lockedUntil) {
+        customer.failedLogins = 0;
+        customer.failedSince = null;
+        customer.lockedUntil = null;
+        await storage.set(key, customer, etag);
+      }
+      return startCustomerSession(request, storage, customer, key);
+    }
+    if (path === "/api/account/logout" && method === "POST") {
+      const token = request.headers.get("cookie")?.match(/(?:^|;\s*)sd_customer=([A-Za-z0-9_-]+)/)?.[1];
+      if (token?.length === 43) await storage.delete(customerSessionKey(token));
+      return message({ ok: true }, 200, {
+        "set-cookie": customerCookie(request, "", 0),
+      });
+    }
+    if (path === "/api/account/session" && method === "GET") {
+      const customer = await customerSession(request, storage);
+      return customer ? message({ customer: publicCustomer(customer) })
+        : fail("Entre na sua conta para continuar.", 401);
+    }
+    if (path === "/api/account/orders" && method === "GET") {
+      const customer = await customerSession(request, storage);
+      if (!customer) return fail("Entre na sua conta para ver os pedidos.", 401);
+      const orders = (await ordersOf(storage))
+        .filter((order) => order.customerId === customer.id)
+        .map((order) => ({
+          id: order.id, number: order.number, createdAt: order.createdAt,
+          status: order.status, paymentStatus: order.paymentStatus,
+          totalCents: order.subtotalCents +
+            (order.fulfillment === "delivery" ? order.deliveryFeeCents || 0 : 0),
+          fulfillment: order.fulfillment,
+        }));
+      return message({ orders });
+    }
+    if (path === "/api/account/orders/claim" && method === "POST") {
+      const customer = await customerSession(request, storage);
+      if (!customer) return fail("Entre na sua conta para vincular o pedido.", 401);
+      const data = await bodyOf(request);
+      const id = clean(data.id, 36);
+      if (!/^[a-f0-9-]{36}$/.test(id)) return fail("Pedido inválido.");
+      const key = `orders/${id}`;
+      const { data: order, etag } = await storage.getWithEtag(key);
+      if (!order || !trackingValid(order, data.token))
+        return fail("Pedido não encontrado ou link inválido.", 404);
+      if (order.customerId && order.customerId !== customer.id)
+        return fail("Este pedido já pertence a outra conta.", 409);
+      if (!order.customerId) {
+        if (!(await storage.set(key, { ...order, customerId: customer.id }, etag)))
+          return fail("O pedido mudou. Tente novamente.", 409);
+      }
+      return message({ id: order.id, number: order.number });
+    }
     if (path === "/api/orders/lookup" && method === "POST") {
       if (rateLimited(request, "lookup", 20, 60 * 60 * 1000))
         return fail("Muitas buscas. Tente mais tarde.", 429);
@@ -275,7 +419,8 @@ export async function handleApi(request, storage, pathOverride) {
       if (!/^SD-[0-9A-F-]{6,20}$/.test(number) || phone.length < 10)
         return fail("Confira o número do pedido e o telefone com DDD.");
       const order = (await ordersOf(storage)).find((entry) =>
-        entry.number === number && entry.customer.phone.replace(/\D/g, "") === phone,
+        !entry.customerId && entry.number === number &&
+        entry.customer.phone.replace(/\D/g, "") === phone,
       );
       if (!order) return fail("Pedido não encontrado com esses dados.", 404);
       if (!order.trackingToken) {
@@ -290,8 +435,12 @@ export async function handleApi(request, storage, pathOverride) {
     }
     const publicOrderMatch = path.match(/^\/api\/orders\/([a-f0-9-]{36})$/);
     if (publicOrderMatch && method === "GET") {
+      const customer = await customerSession(request, storage);
+      if (!customer && !url.searchParams.get("token"))
+        return fail("Entre na sua conta para acompanhar o pedido.", 401);
       const order = await storage.get(`orders/${publicOrderMatch[1]}`);
-      if (!trackingValid(order, url.searchParams.get("token")))
+      if (!order || !(customer?.id === order.customerId ||
+          trackingValid(order, url.searchParams.get("token"))))
         return fail("Pedido não encontrado ou link inválido.", 404);
       return message({ order: publicOrder(order, await settingsOf(storage)) });
     }
@@ -300,9 +449,12 @@ export async function handleApi(request, storage, pathOverride) {
       if (rateLimited(request, "payment-report", 30, 60 * 60 * 1000))
         return fail("Muitas tentativas. Tente mais tarde.", 429);
       const key = `orders/${paymentReportMatch[1]}`;
-      const { data: order, etag } = await storage.getWithEtag(key);
       const data = await bodyOf(request);
-      if (!trackingValid(order, data.token))
+      const customer = await customerSession(request, storage);
+      if (!customer && !data.token)
+        return fail("Entre na sua conta para informar o pagamento.", 401);
+      const { data: order, etag } = await storage.getWithEtag(key);
+      if (!order || !(customer?.id === order.customerId || trackingValid(order, data.token)))
         return fail("Pedido não encontrado ou link inválido.", 404);
       if (order.paymentStatus === "review" || order.paymentStatus === "paid")
         return message({ order: publicOrder(order, await settingsOf(storage)) });
@@ -323,14 +475,16 @@ export async function handleApi(request, storage, pathOverride) {
       return message({ order: publicOrder(next, settings) });
     }
     if (path === "/api/orders" && method === "POST") {
+      const customer = await customerSession(request, storage);
+      if (!customer) return fail("Entre na sua conta antes de finalizar o pedido.", 401);
       if (rateLimited(request, "order", 12, 60 * 60 * 1000))
         return fail("Muitas solicitações. Tente mais tarde.", 429);
       const settings = await settingsOf(storage);
       if (!settings.acceptsOrders)
         return fail("A loja está pausada para novos pedidos.", 409);
       const data = await bodyOf(request);
-      const name = clean(data.name, 100),
-        phone = clean(data.phone, 30),
+      const name = customer.name,
+        phone = customer.phone,
         address = clean(data.address, 300),
         notes = clean(data.notes, 500);
       const digits = phone.replace(/\D/g, "");
@@ -396,10 +550,10 @@ export async function handleApi(request, storage, pathOverride) {
         updatedAt: now,
         status: "new",
         paymentStatus: "unpaid",
-        trackingToken: newTrackingToken(),
+        customerId: customer.id,
         pixKey: settings.pixKey,
         pixTxid: id.replaceAll("-", "").slice(0, 25).toUpperCase(),
-        customer: { name, phone },
+        customer: { name, phone, email: customer.email },
         fulfillment,
         address: fulfillment === "delivery" ? address : "",
         notes,
@@ -415,7 +569,6 @@ export async function handleApi(request, storage, pathOverride) {
         {
           id,
           number: order.number,
-          token: order.trackingToken,
           status: order.status,
           subtotalCents: order.subtotalCents,
         },
