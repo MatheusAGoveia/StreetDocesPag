@@ -13,7 +13,7 @@ npm run dev
 O comando de configuração cria `.env.local` com e-mail, hash da senha e segredo de sessão. Ele mostra a senha gerada uma única vez; guarde-a. Para escolher sua própria senha, rode `npm run admin:setup -- --email=seu@email.com` e digite uma senha de pelo menos 12 caracteres. Reinicie o servidor depois de alterar as credenciais. Abra `http://127.0.0.1:5173/admin` para entrar.
 
 O ambiente local guarda catálogo, configurações, pedidos e fotos em uma pasta de dados fora da raiz servida pelo Vite, em `~/.street-doces/<identificador-do-projeto>`. O caminho pode ser definido com `STREET_DATA_DIR`. Não apague essa pasta sem antes fazer backup dos pedidos.
-Os dados locais são separados dos dados do Netlify; publicar o site não transfere pedidos locais automaticamente.
+Os dados locais são separados dos dados publicados na Vercel ou no Netlify; publicar o site não transfere pedidos locais automaticamente.
 
 ## O que o painel faz
 
@@ -34,7 +34,23 @@ Quando a equipe confirma o pedido, o Pix fica disponível. Para entrega, a equip
 
 O botão **Já fiz o Pix** coloca o pagamento em **Pix a conferir**. Isso é apenas um aviso do cliente: a equipe precisa confirmar o crédito na instituição financeira e marcar **Pago** no painel. Sem integração com um provedor de pagamentos, o site não consegue detectar, validar ou estornar transações automaticamente. O valor do frete fica bloqueado após o aviso de pagamento para evitar divergência de valor.
 
-## Publicar no Netlify
+## Publicar na Vercel
+
+O site em `street-doces-pag.vercel.app` usa a função em `api/handler.mjs`. O `vercel.json` encaminha `/api/*` para essa função e as páginas `/admin`, `/acompanhar` e `/pedido/...` para o aplicativo React. O frontend sempre chama `/api/...` no próprio domínio; não há endpoint de `localhost` no código publicado.
+
+No projeto da Vercel, crie e conecte um **Vercel Blob privado** em **Storage → Create Database → Blob → Private**, incluindo o ambiente **Production**. Pedidos, telefones, endereços e dados de pagamento precisam ficar em armazenamento privado. A conexão fornece `BLOB_STORE_ID` e autenticação OIDC automaticamente; o SDK também aceita `BLOB_READ_WRITE_TOKEN` caso o projeto utilize esse modo. A loja não aceita pedidos enquanto o armazenamento não estiver configurado.
+
+Configure também estas três variáveis em **Settings → Environment Variables** para **Production**:
+
+```text
+ADMIN_EMAIL
+ADMIN_PASSWORD_HASH
+SESSION_SECRET
+```
+
+Gere os valores com `npm run admin:setup -- --email=seu@email.com`. Copie apenas os valores para a Vercel; não publique `.env.local`. Após configurar o Blob e as variáveis, faça um novo deploy, entre em `/admin`, confirme a chave Pix e realize um pedido de teste. Os dados da Vercel são independentes dos dados locais e dos dados do Netlify.
+
+## Publicar no Netlify (alternativa)
 
 O `netlify.toml` já define a compilação, as rotas `/api/*` e a função de servidor. Em produção, os dados ficam em um armazenamento persistente [Netlify Blobs](https://docs.netlify.com/build/data-and-storage/netlify-blobs/) associado ao site, incluindo os novos pedidos e fotos. Configure estas três variáveis em **Project configuration → Environment variables** antes do deploy:
 

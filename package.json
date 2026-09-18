@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@netlify/blobs": "^11.1.0",
+    "@vercel/blob": "^2.8.0",
     "gsap": "^3.14.2",
     "lucide-react": "^0.468.0",
     "qrcode.react": "^4.2.0",

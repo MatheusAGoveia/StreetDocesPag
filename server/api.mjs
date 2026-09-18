@@ -233,10 +233,10 @@ async function updateCatalog(storage, transform) {
     "O catálogo mudou durante a edição. Atualize e tente novamente.",
   );
 }
-export async function handleApi(request, storage) {
+export async function handleApi(request, storage, pathOverride) {
   try {
     const url = new URL(request.url);
-    const path = url.pathname
+    const path = (pathOverride || url.pathname)
       .replace(/^\/.netlify\/functions\/api/, "/api")
       .replace(/\/$/, "");
     const method = request.method.toUpperCase();

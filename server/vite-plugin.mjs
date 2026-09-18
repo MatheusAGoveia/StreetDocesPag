@@ -20,10 +20,11 @@ export default function streetApi() {
               return;
             }
           }
-          const url = new URL(
-            `/api${incoming.url || ""}`,
-            `http://${incoming.headers.host || "localhost:5173"}`,
-          );
+          if (!incoming.headers.host) {
+            outgoing.writeHead(400).end();
+            return;
+          }
+          const url = new URL(`/api${incoming.url || ""}`, `http://${incoming.headers.host}`);
           const request = new Request(url, {
             method: incoming.method,
             headers: incoming.headers,
