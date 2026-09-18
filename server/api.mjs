@@ -129,10 +129,9 @@ async function settingsOf(storage) {
   return { ...seedSettings, ...(await storage.get("settings")) };
 }
 async function ordersOf(storage) {
-  const keys = await storage.list("orders/");
-  const orders = (
-    await Promise.all(keys.map((key) => storage.get(key)))
-  ).filter(Boolean);
+  const orders = storage.listValues
+    ? (await storage.listValues("orders/")).filter(Boolean)
+    : (await Promise.all((await storage.list("orders/")).map((key) => storage.get(key)))).filter(Boolean);
   return orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 const newTrackingToken = () => randomBytes(24).toString("base64url");

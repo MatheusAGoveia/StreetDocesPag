@@ -1,5 +1,5 @@
 import { handleApi } from "../server/api.mjs";
-import { vercelBlobStorage } from "../server/vercel-storage.mjs";
+import { postgresStorage } from "../server/postgres-storage.mjs";
 
 export async function handleVercelRequest(request, storage) {
   const route = new URL(request.url).searchParams.get("route");
@@ -11,11 +11,11 @@ export async function handleVercelRequest(request, storage) {
 export default {
   async fetch(request) {
     try {
-      return await handleVercelRequest(request, await vercelBlobStorage());
+      return await handleVercelRequest(request, postgresStorage());
     } catch (error) {
-      if (error.message === "VERCEL_BLOB_NOT_CONFIGURED")
+      if (error.message === "POSTGRES_NOT_CONFIGURED")
         return Response.json(
-          { error: "Armazenamento privado da loja não configurado na Vercel." },
+          { error: "Banco PostgreSQL não configurado na Vercel. Conecte o Neon e configure DATABASE_URL." },
           { status: 503, headers: { "cache-control": "no-store" } },
         );
       console.error("Street Doces Vercel Function:", error);

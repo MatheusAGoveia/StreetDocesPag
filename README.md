@@ -40,7 +40,7 @@ O botão **Já fiz o Pix** coloca o pagamento em **Pix a conferir**. Isso é ape
 
 O site em `street-doces-pag.vercel.app` usa a função em `api/handler.mjs`. O `vercel.json` encaminha `/api/*` para essa função e as páginas `/admin`, `/acompanhar` e `/pedido/...` para o aplicativo React. O frontend sempre chama `/api/...` no próprio domínio; não há endpoint de `localhost` no código publicado.
 
-No projeto da Vercel, crie e conecte um **Vercel Blob privado** em **Storage → Create Database → Blob → Private**, incluindo o ambiente **Production**. Contas, hashes de senha, sessões, pedidos, telefones, endereços e dados de pagamento precisam ficar em armazenamento privado. A conexão fornece `BLOB_STORE_ID` e autenticação OIDC automaticamente; o SDK também aceita `BLOB_READ_WRITE_TOKEN` caso o projeto utilize esse modo. A loja não permite cadastro ou pedidos enquanto o armazenamento não estiver configurado.
+No projeto da Vercel, abra **Storage → Create Database → Neon Postgres** e conecte o banco ao projeto, incluindo o ambiente **Production**. A integração fornece `DATABASE_URL`. Se você já tiver um PostgreSQL compatível, pode configurar `DATABASE_URL` manualmente em **Settings → Environment Variables**. A API cria automaticamente a tabela `street_doces_data` na primeira requisição, desde que o usuário do banco tenha permissão para criar tabelas. Ela guarda catálogo, configurações, contas, hashes de senha, sessões, pedidos e imagens em linhas JSONB privadas, com versão para impedir alterações concorrentes. Sem `DATABASE_URL`, a API informa erro 503 e não recebe pedidos.
 
 Configure também estas três variáveis em **Settings → Environment Variables** para **Production**:
 
@@ -50,7 +50,7 @@ ADMIN_PASSWORD_HASH
 SESSION_SECRET
 ```
 
-Gere os valores com `npm run admin:setup -- --email=seu@email.com`. Copie apenas os valores para a Vercel; não publique `.env.local`. Após configurar o Blob e as variáveis, faça um novo deploy, entre em `/admin`, confirme a chave Pix e realize um pedido de teste. Os dados da Vercel são independentes dos dados locais e dos dados do Netlify.
+Gere os valores com `npm run admin:setup -- --email=seu@email.com`. Copie apenas os valores para a Vercel; não publique `.env.local` nem a URL de conexão. Após conectar o PostgreSQL e configurar as variáveis, faça um novo deploy, entre em `/admin`, confirme a chave Pix e realize um pedido de teste. Configure backups no provedor PostgreSQL. Os dados da Vercel são independentes dos dados locais e dos dados do Netlify.
 
 ## Publicar no Netlify (alternativa)
 
