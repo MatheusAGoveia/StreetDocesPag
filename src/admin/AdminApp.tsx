@@ -14,7 +14,9 @@ import {
   ChevronDown,
   Clock3,
   CreditCard,
+  CircleDollarSign,
   Download,
+  Factory,
   ExternalLink,
   Eye,
   EyeOff,
@@ -23,20 +25,25 @@ import {
   LogOut,
   Menu,
   Package,
+  PackageCheck,
   Plus,
   RefreshCw,
   Search,
   Settings,
   ShoppingBag,
+  ReceiptText,
   SlidersHorizontal,
   Sparkles,
   Store,
   Truck,
   Users,
+  UserRoundCheck,
   Warehouse,
   X,
 } from "lucide-react";
 import { formatPrice, type Product, type StoreSettings } from "../catalog";
+import { api } from "./api";
+import BusinessApp, { BusinessOverview, type BusinessSection } from "./BusinessApp";
 import "./admin.css";
 
 type Status =
@@ -72,6 +79,7 @@ type Order = {
   }[];
   subtotalCents: number;
   deliveryFeeCents: number | null;
+  deliveryCostCents?: number | null;
   deliveryPartner: string;
   adminNotes: string;
   history: { at: string; label: string }[];
@@ -82,7 +90,7 @@ type Dashboard = {
   settings: StoreSettings;
 };
 type Tab =
-  "overview" | "orders" | "products" | "inventory" | "customers" | "settings";
+  "overview" | "orders" | "products" | "inventory" | "customers" | "settings" | BusinessSection;
 
 const tabs: { key: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "overview", label: "Visão geral", icon: LayoutDashboard },
@@ -90,6 +98,12 @@ const tabs: { key: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "products", label: "Produtos", icon: Package },
   { key: "inventory", label: "Estoque", icon: Warehouse },
   { key: "customers", label: "Clientes", icon: Users },
+  { key: "finance", label: "Finanças", icon: CircleDollarSign },
+  { key: "costing", label: "Custos e margens", icon: Factory },
+  { key: "purchases", label: "Compras e insumos", icon: PackageCheck },
+  { key: "suppliers", label: "Fornecedores", icon: UserRoundCheck },
+  { key: "distribution", label: "Distribuição", icon: Truck },
+  { key: "expenses", label: "Despesas", icon: ReceiptText },
   { key: "settings", label: "Configurações", icon: Settings },
 ];
 const statusLabels: Record<Status, string> = {
@@ -116,29 +130,6 @@ const dateOnly = (date: string) =>
   new Intl.DateTimeFormat("pt-BR", { dateStyle: "medium" }).format(
     new Date(date),
   );
-
-async function api<T>(
-  path: string,
-  method = "GET",
-  body?: unknown,
-): Promise<T> {
-  const response = await fetch(`/api/admin/${path}`, {
-    method,
-    credentials: "same-origin",
-    headers:
-      body === undefined ? undefined : { "content-type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const result = await response
-    .json()
-    .catch(() => ({ error: "Resposta inválida do servidor." }));
-  if (response.status === 401 && path !== "login" && path !== "session") {
-    window.dispatchEvent(new Event("street-admin-expired"));
-  }
-  if (!response.ok)
-    throw new Error(result.error || "Não foi possível concluir a operação.");
-  return result as T;
-}
 
 function Badge({
   children,
@@ -289,10 +280,12 @@ function Overview({
   data,
   setTab,
   setSelected,
+  ordersRevision,
 }: {
   data: Dashboard;
   setTab: (tab: Tab) => void;
   setSelected: (order: Order) => void;
+  ordersRevision: string;
 }) {
   const { orders, products } = data;
   const open = orders.filter(
@@ -378,6 +371,7 @@ function Overview({
           </small>
         </div>
       </div>
+      <BusinessOverview onOpen={() => setTab("finance")} ordersRevision={ordersRevision} />
       <div className="overview-split">
         <section className="admin-panel chart-panel">
           <div className="panel-heading">
@@ -1477,6 +1471,7 @@ function OrderDetail({
         paymentStatus: draft.paymentStatus,
         deliveryPartner: draft.deliveryPartner,
         deliveryFeeCents: draft.deliveryFeeCents,
+        deliveryCostCents: draft.deliveryCostCents ?? null,
         adminNotes: draft.adminNotes,
       });
       await refresh();
@@ -1625,45 +1620,42 @@ function OrderDetail({
               </label>
             </div>
             {order.fulfillment === "delivery" && (
-              <div className="field-pair">
+              <>
+                <div className="field-pair">
+                  <label>
+                    Parceiro
+                    <input
+                      value={draft.deliveryPartner}
+                      onChange={(event) => setDraft({ ...draft, deliveryPartner: event.target.value })}
+                      placeholder="99 ou Uber"
+                    />
+                  </label>
+                  <label>
+                    Frete cobrado (R$)
+                    <input
+                      type="number" step="0.01" min="0"
+                      disabled={["review", "paid", "refunded"].includes(order.paymentStatus)}
+                      value={draft.deliveryFeeCents == null ? "" : draft.deliveryFeeCents / 100}
+                      onChange={(event) => setDraft({ ...draft,
+                        deliveryFeeCents: event.target.value === "" ? null : Math.round(Number(event.target.value) * 100),
+                      })}
+                      placeholder="A confirmar"
+                    />
+                  </label>
+                </div>
                 <label>
-                  Parceiro
+                  Custo real do parceiro (R$)
                   <input
-                    value={draft.deliveryPartner}
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        deliveryPartner: event.target.value,
-                      })
-                    }
-                    placeholder="99 ou Uber"
+                    type="number" step="0.01" min="0"
+                    value={draft.deliveryCostCents == null ? "" : draft.deliveryCostCents / 100}
+                    onChange={(event) => setDraft({ ...draft,
+                      deliveryCostCents: event.target.value === "" ? null : Math.round(Number(event.target.value) * 100),
+                    })}
+                    placeholder="Preencha após contratar o parceiro"
                   />
+                  <small>Usado no resultado financeiro; não muda o valor cobrado do cliente.</small>
                 </label>
-                <label>
-                  Frete (R$)
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    disabled={order.paymentStatus === "review" || order.paymentStatus === "paid" || order.paymentStatus === "refunded"}
-                    value={
-                      draft.deliveryFeeCents == null
-                        ? ""
-                        : draft.deliveryFeeCents / 100
-                    }
-                    onChange={(event) =>
-                      setDraft({
-                        ...draft,
-                        deliveryFeeCents:
-                          event.target.value === ""
-                            ? null
-                            : Math.round(Number(event.target.value) * 100),
-                      })
-                    }
-                    placeholder="A confirmar"
-                  />
-                </label>
-              </div>
+              </>
             )}
             <label>
               Notas internas
@@ -1797,6 +1789,7 @@ export default function AdminApp() {
     data?.orders.filter((order) => order.paymentStatus === "review").length || 0;
   const selectedCurrent =
     selected && data?.orders.find((order) => order.id === selected.id);
+  const ordersRevision = data?.orders.map((entry) => `${entry.id}:${entry.updatedAt}`).join("|") || "";
   return (
     <div className="admin-shell">
       <aside className={`admin-sidebar ${menuOpen ? "open" : ""}`}>
@@ -1817,15 +1810,14 @@ export default function AdminApp() {
         <div className="sidebar-section-label">WORKSPACE</div>
         <nav className="sidebar-nav" aria-label="Navegação administrativa">
           {tabs.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              className={tab === key ? "active" : ""}
-              onClick={() => navigate(key)}
-            >
-              <Icon size={20} />
-              <span>{label}</span>
-              {key === "orders" && newCount + reviewCount > 0 && <b>{newCount + reviewCount}</b>}
-            </button>
+            <div key={key}>
+              {key === "finance" && <div className="sidebar-section-label sidebar-sub-label">NEGÓCIO</div>}
+              {key === "settings" && <div className="sidebar-section-label sidebar-sub-label">SISTEMA</div>}
+              <button className={tab === key ? "active" : ""} onClick={() => navigate(key)}>
+                <Icon size={20} /><span>{label}</span>
+                {key === "orders" && newCount + reviewCount > 0 && <b>{newCount + reviewCount}</b>}
+              </button>
+            </div>
           ))}
         </nav>
         <div className="sidebar-bottom">
@@ -1886,6 +1878,7 @@ export default function AdminApp() {
                   data={data}
                   setTab={navigate}
                   setSelected={setSelected}
+                  ordersRevision={ordersRevision}
                 />
               )}
               {tab === "orders" && (
@@ -1906,6 +1899,14 @@ export default function AdminApp() {
                 />
               )}
               {tab === "customers" && <Customers orders={data.orders} />}
+              {(["finance", "costing", "purchases", "suppliers", "distribution", "expenses"] as Tab[]).includes(tab) &&
+                <BusinessApp key={tab} section={tab as BusinessSection} products={data.products}
+                  ordersRevision={ordersRevision}
+                  onNavigate={navigate} onOrdersChanged={refresh}
+                  onOpenOrder={(id) => {
+                    const order = data.orders.find((entry) => entry.id === id);
+                    if (order) setSelected(order);
+                  }} notify={setToast} />}
               {tab === "settings" && (
                 <StoreSettingsPage
                   settings={data.settings}

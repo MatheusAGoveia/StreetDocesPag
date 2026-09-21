@@ -8,6 +8,7 @@ import {
 } from "node:crypto";
 import { seedProducts, seedSettings } from "./seed.mjs";
 import { createPixPayload } from "./pix.mjs";
+import { BusinessError, handleBusinessApi, loadCostMap } from "./business.mjs";
 
 const statuses = [
   "new",
@@ -207,7 +208,14 @@ function publicOrder(order, settings) {
     fulfillment: order.fulfillment,
     address: order.address,
     pickupAddress: settings.pickupAddress,
-    items: order.items,
+    items: order.items.map((item) => ({
+      productId: item.productId,
+      name: item.name,
+      image: item.image,
+      quantity: item.quantity,
+      priceCents: item.priceCents,
+      totalCents: item.totalCents,
+    })),
     subtotalCents: order.subtotalCents,
     deliveryFeeCents: order.deliveryFeeCents,
     totalCents,
@@ -505,6 +513,7 @@ export async function handleApi(request, storage, pathOverride) {
       )
         return fail("Carrinho inválido.");
       const catalog = await catalogOf(storage);
+      const costs = await loadCostMap(storage, catalog);
       const seen = new Set();
       const items = data.items.map((item) => {
         if (seen.has(item.id)) throw new Error("Item duplicado no carrinho.");
@@ -526,6 +535,7 @@ export async function handleApi(request, storage, pathOverride) {
           quantity,
           priceCents: product.priceCents,
           totalCents: product.priceCents * quantity,
+          unitCostCents: costs.get(product.id)?.unitCostCents ?? null,
         };
       });
       const subtotalCents = items.reduce(
@@ -559,6 +569,7 @@ export async function handleApi(request, storage, pathOverride) {
         items,
         subtotalCents,
         deliveryFeeCents: null,
+        deliveryCostCents: null,
         deliveryPartner: "",
         adminNotes: "",
         history: [{ at: now, label: "Pedido recebido" }],
@@ -612,6 +623,9 @@ export async function handleApi(request, storage, pathOverride) {
       ]);
       return message({ orders, products, settings });
     }
+    if (path.startsWith("/api/admin/business"))
+      return await handleBusinessApi(request, storage, path,
+        () => catalogOf(storage), () => ordersOf(storage));
     if (path === "/api/admin/media" && method === "POST") {
       const form = await request.formData();
       const file = form.get("image");
@@ -679,6 +693,13 @@ export async function handleApi(request, storage, pathOverride) {
         data.deliveryFeeCents !== undefined
       )
         return fail("Frete inválido.");
+      const costInput = data.deliveryCostCents === undefined
+        ? order.deliveryCostCents ?? null : data.deliveryCostCents;
+      const deliveryCostCents = costInput === null || costInput === ""
+        ? null : integer(costInput, 0, 1000000);
+      if ((costInput !== null && costInput !== "" && deliveryCostCents === null) ||
+          (order.fulfillment !== "delivery" && deliveryCostCents !== null))
+        return fail("Custo da entrega inválido.");
       if (["review", "paid", "refunded"].includes(order.paymentStatus) &&
           data.deliveryFeeCents !== undefined && deliveryFeeCents !== order.deliveryFeeCents)
         return fail("O frete não pode mudar após o pagamento informado.", 409);
@@ -691,6 +712,9 @@ export async function handleApi(request, storage, pathOverride) {
           80,
         ),
         deliveryFeeCents,
+        deliveryCostCents,
+        paidAt: paymentStatus === "paid" && order.paymentStatus !== "paid"
+          ? new Date().toISOString() : order.paidAt,
         adminNotes: clean(data.adminNotes ?? order.adminNotes, 1000),
         updatedAt: new Date().toISOString(),
       };
@@ -793,6 +817,7 @@ export async function handleApi(request, storage, pathOverride) {
     }
     return fail("Rota não encontrada.", 404);
   } catch (error) {
+    if (error instanceof BusinessError) return fail(error.message, error.status);
     if (error instanceof SyntaxError) return fail("JSON inválido.");
     if (error.message?.includes("Chave inválida"))
       return fail("Dados inválidos.");

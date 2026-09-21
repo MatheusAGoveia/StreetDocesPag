@@ -22,9 +22,21 @@ Os dados locais são separados dos dados publicados na Vercel ou no Netlify; pub
 - **Produtos:** criação e edição de nome, categoria, descrição, preço, cor, etiqueta, visibilidade e imagem. Aceita upload JPG, PNG e WebP de até 3 MB ou URL HTTPS.
 - **Estoque:** controle opcional por produto, quantidade e limite de alerta. O pedido é uma solicitação e não baixa unidades automaticamente; confirme disponibilidade antes de aceitar.
 - **Clientes:** lista derivada de pedidos, agrupada pela conta nos novos pedidos, com e-mail, telefone, frequência e histórico de valores solicitados.
+- **Finanças:** resultado por período, receita recebida, custo dos produtos vendidos, entregas, despesas, compras de insumos, fluxo líquido e margem por produto; exportação CSV. A visão geral mostra um atalho com o resultado do mês.
+- **Custos e margens:** custo unitário direto ou ficha técnica por insumos. A ficha usa o custo médio ponderado das compras; o painel calcula lucro e margem sobre o preço atual.
+- **Compras e insumos:** cadastro de insumos em gramas, mililitros ou unidades, entradas vinculadas a fornecedor, quantidade e valor pagos, histórico e exportação CSV.
+- **Fornecedores:** contato, observações, situação ativa e total de compras por fornecedor.
+- **Distribuição:** cada entrega mostra parceiro, endereço, frete cobrado e custo real. A diferença do frete entra no resultado quando o pedido foi pago.
+- **Despesas:** lançamentos operacionais por categoria, data e fornecedor opcional. Compras e despesas podem ser anuladas com motivo; o registro continua no histórico.
 - **Configurações:** identidade, Instagram, WhatsApp, chave Pix, endereço, retirada, entrega e pausa dos novos pedidos.
 
 O painel recarrega pedidos automaticamente enquanto a aba de operação está aberta. A autenticação usa senha com `scrypt`, cookie assinado `HttpOnly` e sessão com duração de oito horas. A API exige login para ler dados de clientes ou alterar produtos, pedidos e configurações. O preço recebido do navegador nunca é usado para calcular o pedido.
+
+### Como o resultado é calculado
+
+O período usa a data de pagamento em Betim (`America/Sao_Paulo`). Somente pedidos marcados como **Pago** e não cancelados entram na receita. O lucro operacional é **receita dos produtos e fretes − custo dos produtos vendidos − custo real das entregas − despesas operacionais**. O fluxo líquido do período desconta **compras de insumos** no lugar do custo dos produtos vendidos, pois a compra é saída de caixa e o custo vendido é competência; descontar ambos no lucro contaria o mesmo insumo duas vezes. Esses números representam a operação registrada no painel, não saldo bancário nem demonstração fiscal.
+
+O custo unitário calculado é gravado em cada novo pedido. Se um pedido antigo não tiver esse valor, o painel usa a ficha atual como **estimativa** e sinaliza a ocorrência. Se faltar custo de algum produto vendido ou de uma entrega paga, o lucro aparece como **A apurar**. Lance o custo real do parceiro em **Distribuição** e confira o crédito do Pix antes de marcar **Pago**. Compras mostram quantidade **adquirida**, não estoque disponível ou consumo automático; a aba **Estoque** continua sendo o controle de disponibilidade dos produtos.
 
 ## Acompanhamento e Pix
 
