@@ -221,6 +221,11 @@ function publicOrder(order, settings) {
     totalCents,
     deliveryPartner: order.deliveryPartner,
     history: order.history,
+    canCancel: ["new", "confirmed"].includes(order.status) &&
+      order.paymentStatus === "unpaid",
+    cancellationReason: order.status === "cancelled"
+      ? order.cancellationReason || "Cancelado a pedido do cliente."
+      : null,
     paymentReportedAt: order.paymentReportedAt || null,
     pix: canPay ? {
       key: pixKey,
@@ -479,6 +484,45 @@ export async function handleApi(request, storage, pathOverride) {
       };
       if (!(await storage.set(key, next, etag)))
         return fail("O pedido mudou. Atualize a página.", 409);
+      return message({ order: publicOrder(next, settings) });
+    }
+    const cancelOrderMatch = path.match(/^\/api\/orders\/([a-f0-9-]{36})\/cancel$/);
+    if (cancelOrderMatch && method === "POST") {
+      if (rateLimited(request, "cancel-order", 20, 60 * 60 * 1000))
+        return fail("Muitas tentativas. Tente mais tarde.", 429);
+      const key = `orders/${cancelOrderMatch[1]}`;
+      const data = await bodyOf(request);
+      const customer = await customerSession(request, storage);
+      if (!customer && !data.token)
+        return fail("Entre na sua conta para cancelar o pedido.", 401);
+      const { data: order, etag } = await storage.getWithEtag(key);
+      if (!order || !(customer?.id === order.customerId || trackingValid(order, data.token)))
+        return fail("Pedido não encontrado ou link inválido.", 404);
+      const settings = await settingsOf(storage);
+      if (order.status === "cancelled")
+        return message({ order: publicOrder(order, settings) });
+      if (!["new", "confirmed"].includes(order.status))
+        return fail("Este pedido já entrou em preparo e não pode ser cancelado pelo site. Fale com a Street Doces.", 409);
+      if (order.paymentStatus !== "unpaid")
+        return fail("O pagamento deste pedido já foi informado. Fale com a Street Doces para solicitar o cancelamento e tratar o reembolso.", 409);
+      const reason = clean(data.reason, 180);
+      if (reason.length < 3)
+        return fail("Selecione ou informe o motivo do cancelamento.");
+      const now = new Date().toISOString();
+      const next = {
+        ...order,
+        status: "cancelled",
+        cancelledAt: now,
+        cancelledBy: "customer",
+        cancellationReason: reason,
+        updatedAt: now,
+        history: [
+          ...order.history,
+          { at: now, label: `Pedido cancelado pelo cliente — ${reason}` },
+        ],
+      };
+      if (!(await storage.set(key, next, etag)))
+        return fail("O pedido mudou. Atualize a página e tente novamente.", 409);
       return message({ order: publicOrder(next, settings) });
     }
     if (path === "/api/orders" && method === "POST") {

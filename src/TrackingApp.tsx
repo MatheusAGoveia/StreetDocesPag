@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent } from 'react';
-import { ArrowLeft, ArrowRight, Check, Clock3, Copy, MapPin, PackageCheck, RefreshCw, ShieldCheck, ShoppingBag, Truck, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Clock3, Copy, MapPin, PackageCheck, RefreshCw, ShieldCheck, ShoppingBag, Trash2, Truck, X, XCircle } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { formatPrice } from './catalog';
 import AccountAccess from './account/AccountAccess';
@@ -16,6 +16,7 @@ type Order = {
   items: { productId: string; name: string; image: string; quantity: number; priceCents: number; totalCents: number }[];
   subtotalCents: number; deliveryFeeCents: number | null; totalCents: number;
   deliveryPartner: string; history: { at: string; label: string }[];
+  canCancel: boolean; cancellationReason: string | null;
   paymentReportedAt: string | null;
   pix: { key: string; txid: string; amountCents: number; payload: string } | null;
 };
@@ -120,7 +121,7 @@ function Lookup() {
 }
 
 function StatusTimeline({ order }: { order: Order }) {
-  if (order.status === 'cancelled') return <div className="tracking-cancelled"><XCircle size={24} /><div><strong>Pedido cancelado</strong><p>Entre em contato com a loja se precisar de ajuda.</p></div></div>;
+  if (order.status === 'cancelled') return <div className="tracking-cancelled"><XCircle size={24} /><div><strong>Pedido cancelado</strong><p>{order.cancellationReason || 'Cancelado a pedido do cliente.'}</p></div></div>;
   const path = statuses.filter((item) => order.fulfillment === 'delivery' || item.key !== 'dispatched').filter((item) => item.key !== 'cancelled');
   const currentIndex = path.findIndex((item) => item.key === order.status);
   return <ol className="tracking-timeline">{path.map((item, index) => <li key={item.key} className={index < currentIndex ? 'done' : index === currentIndex ? 'current' : ''}>
@@ -170,6 +171,57 @@ function Payment({ order, token, onUpdate }: { order: Order; token: string | nul
   </section>;
 }
 
+const cancellationReasons = [
+  'Mudei de ideia',
+  'Escolhi itens ou quantidades erradas',
+  'Endereço ou forma de recebimento incorretos',
+  'Não conseguirei receber ou retirar',
+  'Outro motivo',
+];
+
+function CancelOrder({ order, token, onUpdate }: { order: Order; token: string | null; onUpdate: (order: Order) => void }) {
+  const [open, setOpen] = useState(false);
+  const [reason, setReason] = useState('');
+  const [details, setDetails] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  if (!order.canCancel) return null;
+  const finalReason = reason === 'Outro motivo' ? details.trim() : reason;
+  async function cancel() {
+    if (finalReason.length < 3) { setError('Escolha um motivo para cancelar.'); return; }
+    setBusy(true); setError('');
+    try {
+      const result = await responseJson<{ order: Order }>(await fetch(`/api/orders/${order.id}/cancel`, {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token, reason: finalReason }),
+      }));
+      onUpdate(result.order);
+      setOpen(false);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Não foi possível cancelar o pedido.'); }
+    finally { setBusy(false); }
+  }
+  return <section className="cancel-order">
+    <div><span className="tracking-kicker">PRECISA MUDAR OS PLANOS?</span><strong>Você pode cancelar antes do preparo começar.</strong></div>
+    <button type="button" onClick={() => { setOpen(true); setError(''); }}><Trash2 size={16} /> Cancelar pedido</button>
+    {open && <div className="cancel-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setOpen(false); }}>
+      <div className="cancel-dialog" role="dialog" aria-modal="true" aria-labelledby="cancel-title">
+        <button className="cancel-dialog-close" type="button" aria-label="Fechar" onClick={() => setOpen(false)} disabled={busy}><X size={21} /></button>
+        <span className="tracking-kicker">CANCELAR / {order.number}</span>
+        <h2 id="cancel-title">Quer mesmo cancelar?</h2>
+        <p>O cancelamento é imediato e não poderá ser desfeito. Se quiser comprar novamente, faça um novo pedido.</p>
+        <label htmlFor="cancel-reason">Motivo do cancelamento</label>
+        <select id="cancel-reason" value={reason} onChange={(event) => { setReason(event.target.value); setError(''); }}>
+          <option value="">Selecione um motivo</option>
+          {cancellationReasons.map((item) => <option key={item} value={item}>{item}</option>)}
+        </select>
+        {reason === 'Outro motivo' && <><label htmlFor="cancel-details">Conte o motivo</label><textarea id="cancel-details" rows={3} maxLength={180} value={details} onChange={(event) => { setDetails(event.target.value); setError(''); }} placeholder="Escreva em poucas palavras" /></>}
+        {error && <p className="tracking-error" role="alert">{error}</p>}
+        <div className="cancel-dialog-actions"><button type="button" className="cancel-keep" onClick={() => setOpen(false)} disabled={busy}>Manter pedido</button><button type="button" className="cancel-confirm" onClick={cancel} disabled={busy || finalReason.length < 3}>{busy ? 'Cancelando…' : 'Confirmar cancelamento'}</button></div>
+      </div>
+    </div>}
+  </section>;
+}
+
 function OrderView({ id, token }: { id: string; token: string | null }) {
   const { customer, loading: accountLoading, expire } = useAccount();
   const [order, setOrder] = useState<Order | null>(null);
@@ -212,6 +264,7 @@ function OrderView({ id, token }: { id: string; token: string | null }) {
       <section className="tracking-panel items-panel"><div className="tracking-panel-head"><span className="tracking-kicker">02 / O QUE VOCÊ PEDIU</span><ShoppingBag size={21} /></div><h2>Seu corre,<br /><i>seus doces.</i></h2><div className="tracking-items">{order.items.map((item) => <div className="tracking-item" key={item.productId}><img src={item.image} alt="" /><div><strong>{item.name}</strong><span>{item.quantity} × {formatPrice(item.priceCents)}</span></div><b>{formatPrice(item.totalCents)}</b></div>)}</div><div className="tracking-totals"><div><span>Doces</span><strong>{formatPrice(order.subtotalCents)}</strong></div><div><span>{order.fulfillment === 'pickup' ? 'Retirada' : 'Entrega'}</span><strong>{order.fulfillment === 'pickup' ? 'Grátis' : order.deliveryFeeCents == null ? 'A confirmar' : formatPrice(order.deliveryFeeCents)}</strong></div><div className="total"><span>Total {order.deliveryFeeCents == null && order.fulfillment === 'delivery' ? 'parcial' : ''}</span><strong>{formatPrice(order.totalCents)}</strong></div></div></section>
       <section className="tracking-panel delivery-panel"><div className="tracking-panel-head"><span className="tracking-kicker">03 / RECEBIMENTO</span>{order.fulfillment === 'pickup' ? <MapPin size={22} /> : <Truck size={22} />}</div><h2>{order.fulfillment === 'pickup' ? 'Retirada na Street.' : 'A caminho de você.'}</h2><p>{order.fulfillment === 'pickup' ? order.pickupAddress : order.address}</p>{order.deliveryPartner && <small>Entrega por {order.deliveryPartner}</small>}</section>
       <section className="tracking-history"><span className="tracking-kicker">HISTÓRICO DO PEDIDO</span>{[...order.history].reverse().map((event, index) => <div key={`${event.at}-${index}`}><span>{dateTime(event.at)}</span><p>{event.label}</p></div>)}</section>
+      <CancelOrder order={order} token={token} onUpdate={setOrder} />
     </div><Payment order={order} token={token} onUpdate={setOrder} /></div>
     <div className="tracking-help"><span>PRECISA DE AJUDA?</span><p>Tenha o número <strong>{order.number}</strong> em mãos ao falar com a Street Doces.</p><a href="/acompanhar">Ver outros pedidos <ArrowRight size={17} /></a></div>
   </main></Shell>;

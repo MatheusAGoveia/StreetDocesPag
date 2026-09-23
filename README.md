@@ -44,6 +44,8 @@ Antes de finalizar o primeiro pedido, o cliente cria uma conta com nome, WhatsAp
 
 Pedidos antigos, feitos antes das contas, mantêm seus links privados. Depois de entrar, o cliente pode vinculá-los à conta em `/acompanhar` com o número e telefone usados na compra. A página de acompanhamento mostra status, histórico, itens, forma de recebimento e valor. O cadastro não verifica o controle do e-mail e ainda não oferece recuperação de senha; configure um canal de suporte para esses casos antes de divulgar as contas.
 
+O cliente pode cancelar o próprio pedido em `/pedido/...` enquanto ele estiver **Recebido** ou **Confirmado** e nenhum Pix tiver sido informado. O cancelamento exige um motivo, é registrado no histórico e interrompe o pagamento. Depois que o preparo começa ou o pagamento é informado, o site orienta o cliente a falar com a loja para que a equipe avalie produção e eventual reembolso.
+
 Quando a equipe confirma o pedido, o Pix fica disponível. Para entrega, a equipe precisa informar o frete no painel antes disso. O valor do QR Code e do código Copia e Cola é calculado no servidor a partir dos itens e do frete. A chave inicial é `matheusaagd2@gmail.com` e pode ser alterada em **Configurações**. A chave usada fica registrada em cada pedido novo; confira se ela está cadastrada na conta que deve receber antes de divulgar a loja.
 
 O botão **Já fiz o Pix** coloca o pagamento em **Pix a conferir**. Isso é apenas um aviso do cliente: a equipe precisa confirmar o crédito na instituição financeira e marcar **Pago** no painel. Sem integração com um provedor de pagamentos, o site não consegue detectar, validar ou estornar transações automaticamente. O valor do frete fica bloqueado após o aviso de pagamento para evitar divergência de valor.
@@ -91,4 +93,4 @@ npm test
 npm run build
 ```
 
-Os testes cobrem autenticação, preços calculados no servidor, registro e atualização de pedidos, acesso privado ao acompanhamento, geração do BR Code Pix, aviso e conferência de pagamento, alterações de catálogo, pausa de pedidos, upload de imagem e regra de cotação de entrega.
+Os testes cobrem autenticação, preços calculados no servidor, registro e atualização de pedidos, cancelamento pelo cliente, acesso privado ao acompanhamento, geração do BR Code Pix, aviso e conferência de pagamento, alterações de catálogo, pausa de pedidos, upload de imagem e regra de cotação de entrega.

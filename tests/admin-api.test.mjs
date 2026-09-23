@@ -293,6 +293,48 @@ test("cliente acompanha pedido, paga Pix pelo valor final e equipe confere o crÃ
   const paid = await call(storage, `admin/orders/${created.data.id}`, "PATCH", { paymentStatus: "paid" }, cookie);
   assert.equal(paid.response.status, 200);
   assert.equal((await call(storage, endpoint, "GET", undefined, customerCookie)).data.order.paymentStatus, "paid");
+
+  const cancelCandidate = await call(storage, "orders", "POST", {
+    fulfillment: "pickup", items: [{ id: "miss-sensacao", quantity: 1 }],
+  }, customerCookie);
+  assert.equal(cancelCandidate.response.status, 201);
+  const cancelEndpoint = `orders/${cancelCandidate.data.id}`;
+  const cancellable = await call(storage, cancelEndpoint, "GET", undefined, customerCookie);
+  assert.equal(cancellable.data.order.canCancel, true);
+  assert.equal((await call(storage, `${cancelEndpoint}/cancel`, "POST", { reason: "" }, customerCookie)).response.status, 400);
+  assert.equal((await call(storage, `${cancelEndpoint}/cancel`, "POST", { reason: "Mudei de ideia" }, anotherCookie)).response.status, 404);
+  const cancelled = await call(storage, `${cancelEndpoint}/cancel`, "POST", {
+    reason: "Escolhi itens ou quantidades erradas",
+  }, customerCookie);
+  assert.equal(cancelled.response.status, 200);
+  assert.equal(cancelled.data.order.status, "cancelled");
+  assert.equal(cancelled.data.order.canCancel, false);
+  assert.equal(cancelled.data.order.cancellationReason, "Escolhi itens ou quantidades erradas");
+  assert.match(cancelled.data.order.history.at(-1).label, /cancelado pelo cliente/);
+  const repeated = await call(storage, `${cancelEndpoint}/cancel`, "POST", {
+    reason: "Mudei de ideia",
+  }, customerCookie);
+  assert.equal(repeated.response.status, 200);
+  assert.equal(repeated.data.order.history.length, cancelled.data.order.history.length);
+
+  const preparing = await call(storage, "orders", "POST", {
+    fulfillment: "pickup", items: [{ id: "miss-sensacao", quantity: 1 }],
+  }, customerCookie);
+  await call(storage, `admin/orders/${preparing.data.id}`, "PATCH", { status: "preparing" }, cookie);
+  const deniedPreparing = await call(storage, `orders/${preparing.data.id}/cancel`, "POST", {
+    reason: "Mudei de ideia",
+  }, customerCookie);
+  assert.equal(deniedPreparing.response.status, 409);
+
+  const paidNotice = await call(storage, "orders", "POST", {
+    fulfillment: "pickup", items: [{ id: "lil-palha", quantity: 1 }],
+  }, customerCookie);
+  await call(storage, `admin/orders/${paidNotice.data.id}`, "PATCH", { status: "confirmed" }, cookie);
+  await call(storage, `orders/${paidNotice.data.id}/payment-report`, "POST", {}, customerCookie);
+  const deniedPayment = await call(storage, `orders/${paidNotice.data.id}/cancel`, "POST", {
+    reason: "Mudei de ideia",
+  }, customerCookie);
+  assert.equal(deniedPayment.response.status, 409);
 });
 
 test("pedido anterior pode ser recuperado e vinculado Ã  conta", async () => {
