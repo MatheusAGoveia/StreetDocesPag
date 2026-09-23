@@ -18,7 +18,7 @@ Os dados locais são separados dos dados publicados na Vercel ou no Netlify; pub
 ## O que o painel faz
 
 - **Visão geral:** pedidos em andamento, faturamento registrado, movimento dos últimos sete dias e alertas de estoque.
-- **Pedidos:** busca, filtro, detalhes, itens, contato, histórico, status, avisos de Pix para conferir, parceiro e frete; exportação CSV.
+- **Pedidos:** central operacional em quadro por etapa ou lista compacta, prioridades, busca por cliente/produto, pagamento e recebimento visíveis, ações rápidas para avançar o pedido, detalhes, histórico, parceiro, frete e exportação CSV.
 - **Produtos:** criação e edição de nome, categoria, descrição, preço, cor, etiqueta, visibilidade e imagem. Aceita upload JPG, PNG e WebP de até 3 MB ou URL HTTPS.
 - **Estoque:** controle opcional por produto, quantidade e limite de alerta. O pedido é uma solicitação e não baixa unidades automaticamente; confirme disponibilidade antes de aceitar.
 - **Clientes:** lista derivada de pedidos, agrupada pela conta nos novos pedidos, com e-mail, telefone, frequência e histórico de valores solicitados.

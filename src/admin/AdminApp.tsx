@@ -12,12 +12,10 @@ import {
   Bell,
   CalendarDays,
   Check,
-  ChevronDown,
   ClipboardCheck,
   Clock3,
   CreditCard,
   CircleDollarSign,
-  Download,
   Factory,
   ExternalLink,
   Eye,
@@ -35,7 +33,6 @@ import {
   Settings,
   ShoppingBag,
   ReceiptText,
-  SlidersHorizontal,
   Sparkles,
   Store,
   Truck,
@@ -48,9 +45,10 @@ import { formatPrice, type Product, type StoreSettings } from "../catalog";
 import { api } from "./api";
 import BusinessApp, { BusinessOverview, type BusinessSection } from "./BusinessApp";
 import OperationsApp, { OperationsOverview, type OperationsSection } from "./OperationsApp";
+import OrdersView from "./OrdersView";
 import "./admin.css";
 
-type Status =
+export type Status =
   | "new"
   | "confirmed"
   | "preparing"
@@ -58,8 +56,8 @@ type Status =
   | "dispatched"
   | "completed"
   | "cancelled";
-type PaymentStatus = "unpaid" | "review" | "paid" | "refunded";
-type Order = {
+export type PaymentStatus = "unpaid" | "review" | "paid" | "refunded";
+export type Order = {
   id: string;
   number: string;
   createdAt: string;
@@ -503,179 +501,6 @@ function Overview({
             icon={ShoppingBag}
             title="Os pedidos vão aparecer aqui"
             description="Assim que um cliente registrar a primeira solicitação, ela entra nesta lista."
-          />
-        )}
-      </section>
-    </div>
-  );
-}
-
-function Orders({
-  orders,
-  setSelected,
-}: {
-  orders: Order[];
-  setSelected: (order: Order) => void;
-}) {
-  const [query, setQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | Status | "review">("all");
-  const visible = orders.filter(
-    (order) =>
-      (filter === "all" || (filter === "review" ? order.paymentStatus === "review" : order.status === filter)) &&
-      `${order.number} ${order.customer.name} ${order.customer.phone}`
-        .toLowerCase()
-        .includes(query.toLowerCase()),
-  );
-  function exportCsv() {
-    const rows = [
-      [
-        "Pedido",
-        "Data",
-        "Cliente",
-        "Telefone",
-        "Recebimento",
-        "Status",
-        "Pagamento",
-        "Subtotal",
-        "Frete",
-      ],
-      ...visible.map((order) => [
-        order.number,
-        order.createdAt,
-        order.customer.name,
-        order.customer.phone,
-        order.fulfillment === "pickup" ? "Retirada" : "Entrega",
-        statusLabels[order.status],
-        paymentLabels[order.paymentStatus],
-        (order.subtotalCents / 100).toFixed(2),
-        order.deliveryFeeCents == null
-          ? ""
-          : (order.deliveryFeeCents / 100).toFixed(2),
-      ]),
-    ];
-    const csv =
-      "\uFEFF" +
-      rows
-        .map((row) =>
-          row
-            .map((cell) => `"${String(cell).replaceAll('"', '""')}"`)
-            .join(";"),
-        )
-        .join("\r\n");
-    const url = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8" }),
-    );
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `street-doces-pedidos-${new Date().toISOString().slice(0, 10)}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
-  }
-  return (
-    <div className="admin-page-stack">
-      <div className="admin-page-head">
-        <div>
-          <span className="admin-overline">GESTÃO DE VENDAS</span>
-          <h2>
-            Pedidos<span className="heading-dot">.</span>
-          </h2>
-          <p>Acompanhe cada pedido, do primeiro contato até a entrega.</p>
-        </div>
-        <button className="admin-secondary" onClick={exportCsv}>
-          <Download size={18} /> Exportar CSV
-        </button>
-      </div>
-      <section className="admin-panel order-list">
-        <div className="admin-toolbar">
-          <div className="admin-search">
-            <Search size={18} />
-            <input
-              aria-label="Buscar pedidos"
-              placeholder="Buscar por pedido, cliente ou telefone"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-            />
-          </div>
-          <div className="select-wrap">
-            <SlidersHorizontal size={17} />
-            <select
-              aria-label="Filtrar status"
-              value={filter}
-              onChange={(event) =>
-                setFilter(event.target.value as "all" | Status | "review")
-              }
-            >
-              <option value="all">Todos os status</option>
-              <option value="review">Pix a conferir</option>
-              {Object.entries(statusLabels).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <ChevronDown size={16} />
-          </div>
-        </div>
-        {visible.length ? (
-          <div className="admin-table-wrap">
-            <table className="admin-table">
-              <thead>
-                <tr>
-                  <th>Pedido</th>
-                  <th>Cliente</th>
-                  <th>Produtos</th>
-                  <th>Recebimento</th>
-                  <th>Data</th>
-                  <th>Status</th>
-                  <th>Total</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {visible.map((order) => (
-                  <tr key={order.id} onClick={() => setSelected(order)}>
-                    <td>
-                      <strong>{order.number}</strong>
-                    </td>
-                    <td>
-                      <strong>{order.customer.name}</strong>
-                      <small>{order.customer.phone}</small>
-                    </td>
-                    <td>
-                      {order.items.reduce(
-                        (sum, item) => sum + item.quantity,
-                        0,
-                      )}{" "}
-                      itens
-                    </td>
-                    <td>
-                      {order.fulfillment === "pickup" ? "Retirada" : "Entrega"}
-                    </td>
-                    <td>{dateTime(order.createdAt)}</td>
-                    <td>
-                      <StatusBadge status={order.status} />
-                      {order.paymentStatus === "review" && <Badge tone="low">Pix a conferir</Badge>}
-                    </td>
-                    <td>
-                      <strong>
-                        {formatPrice(
-                          order.subtotalCents + (order.deliveryFeeCents || 0),
-                        )}
-                      </strong>
-                    </td>
-                    <td>
-                      <ArrowUpRight size={17} />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <Empty
-            icon={ShoppingBag}
-            title="Nenhum pedido encontrado"
-            description="Tente outro termo ou status para encontrar o que procura."
           />
         )}
       </section>
@@ -1892,7 +1717,7 @@ export default function AdminApp() {
                 />
               )}
               {tab === "orders" && (
-                <Orders orders={data.orders} setSelected={setSelected} />
+                <OrdersView orders={data.orders} onOpen={setSelected} refresh={refresh} notify={setToast} />
               )}
               {tab === "products" && (
                 <Products
