@@ -22,6 +22,10 @@ Os dados locais são separados dos dados publicados na Vercel ou no Netlify; pub
 - **Produtos:** criação e edição de nome, categoria, descrição, preço, cor, etiqueta, visibilidade e imagem. Aceita upload JPG, PNG e WebP de até 3 MB ou URL HTTPS.
 - **Estoque:** controle opcional por produto, quantidade e limite de alerta. O pedido é uma solicitação e não baixa unidades automaticamente; confirme disponibilidade antes de aceitar.
 - **Clientes:** lista derivada de pedidos, agrupada pela conta nos novos pedidos, com e-mail, telefone, frequência e histórico de valores solicitados.
+- **Encomendas:** pedidos antecipados com cliente, data, horário, itens do catálogo ou personalizados, retirada/entrega, sinal, saldo e responsável.
+- **Eventos:** festas e operações maiores com convidados, tema, pagamentos parciais, checklist e itens vinculados à produção.
+- **Produção:** cada item marcado para produção gera uma tarefa com meta, quantidade concluída, prazo e responsável. Ao concluir todas as tarefas, o registro é marcado como pronto e o checklist é atualizado automaticamente.
+- **Agenda:** reúne encomendas, eventos e tarefas de produção em ordem cronológica. A visão geral mostra o próximo compromisso.
 - **Finanças:** resultado por período, receita recebida, custo dos produtos vendidos, entregas, despesas, compras de insumos, fluxo líquido e margem por produto; exportação CSV. A visão geral mostra um atalho com o resultado do mês.
 - **Custos e margens:** custo unitário direto ou ficha técnica por insumos. A ficha usa o custo médio ponderado das compras; o painel calcula lucro e margem sobre o preço atual.
 - **Compras e insumos:** cadastro de insumos em gramas, mililitros ou unidades, entradas vinculadas a fornecedor, quantidade e valor pagos, histórico e exportação CSV.
@@ -34,7 +38,7 @@ O painel recarrega pedidos automaticamente enquanto a aba de operação está ab
 
 ### Como o resultado é calculado
 
-O período usa a data de pagamento em Betim (`America/Sao_Paulo`). Somente pedidos marcados como **Pago** e não cancelados entram na receita. O lucro operacional é **receita dos produtos e fretes − custo dos produtos vendidos − custo real das entregas − despesas operacionais**. O fluxo líquido do período desconta **compras de insumos** no lugar do custo dos produtos vendidos, pois a compra é saída de caixa e o custo vendido é competência; descontar ambos no lucro contaria o mesmo insumo duas vezes. Esses números representam a operação registrada no painel, não saldo bancário nem demonstração fiscal.
+O período usa a data de pagamento em Betim (`America/Sao_Paulo`). Somente pedidos marcados como **Pago** e não cancelados entram na receita. O lucro operacional é **receita dos produtos e fretes − custo dos produtos vendidos − custo real das entregas − despesas operacionais**. Sinais e parcelas de encomendas e eventos entram nas **entradas de caixa**, mas não no lucro antes da conclusão da venda. O fluxo líquido do período desconta **compras de insumos** no lugar do custo dos produtos vendidos, pois a compra é saída de caixa e o custo vendido é competência; descontar ambos no lucro contaria o mesmo insumo duas vezes. Esses números representam a operação registrada no painel, não saldo bancário nem demonstração fiscal.
 
 O custo unitário calculado é gravado em cada novo pedido. Se um pedido antigo não tiver esse valor, o painel usa a ficha atual como **estimativa** e sinaliza a ocorrência. Se faltar custo de algum produto vendido ou de uma entrega paga, o lucro aparece como **A apurar**. Lance o custo real do parceiro em **Distribuição** e confira o crédito do Pix antes de marcar **Pago**. Compras mostram quantidade **adquirida**, não estoque disponível ou consumo automático; a aba **Estoque** continua sendo o controle de disponibilidade dos produtos.
 
@@ -93,4 +97,4 @@ npm test
 npm run build
 ```
 
-Os testes cobrem autenticação, preços calculados no servidor, registro e atualização de pedidos, cancelamento pelo cliente, acesso privado ao acompanhamento, geração do BR Code Pix, aviso e conferência de pagamento, alterações de catálogo, pausa de pedidos, upload de imagem e regra de cotação de entrega.
+Os testes cobrem autenticação, preços calculados no servidor, registro e atualização de pedidos, cancelamento pelo cliente, encomendas, eventos, agenda, pagamentos parciais, checklist e produção, acesso privado ao acompanhamento, geração do BR Code Pix, aviso e conferência de pagamento, alterações de catálogo, pausa de pedidos, upload de imagem e regra de cotação de entrega.

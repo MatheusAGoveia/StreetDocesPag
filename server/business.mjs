@@ -233,7 +233,7 @@ function inPeriod(date, from, to) {
   return date >= from && date <= to;
 }
 
-export function financialSummary(orders, products, purchases, expenses, costs, from, to) {
+export function financialSummary(orders, products, purchases, expenses, costs, from, to, bookings = []) {
   const paid = orders.filter((order) =>
     order.paymentStatus === "paid" && order.status !== "cancelled" &&
     inPeriod(businessDay(order.paidAt || order.createdAt), from, to));
@@ -247,6 +247,12 @@ export function financialSummary(orders, products, purchases, expenses, costs, f
   const revenueCents = productRevenueCents + shippingRevenueCents;
   const purchaseCents = activePurchases.reduce((sum, entry) => sum + entry.totalCents, 0);
   const expenseCents = activeExpenses.reduce((sum, entry) => sum + entry.amountCents, 0);
+  const planningReceiptsCents = bookings
+    .filter((entry) => entry.status !== "cancelled")
+    .flatMap((entry) => entry.payments || [])
+    .filter((payment) => inPeriod(payment.paidAt, from, to))
+    .reduce((sum, payment) => sum + payment.amountCents, 0);
+  const cashReceiptsCents = revenueCents + planningReceiptsCents;
   let cogsCents = 0;
   let deliveryCostCents = 0;
   let missingCostOrders = 0;
@@ -283,18 +289,19 @@ export function financialSummary(orders, products, purchases, expenses, costs, f
     shippingRevenueCents, revenueCents, cogsCents, deliveryCostCents,
     purchaseCents, expenseCents,
     profitCents: complete ? revenueCents - cogsCents - deliveryCostCents - expenseCents : null,
+    planningReceiptsCents, cashReceiptsCents,
     cashAfterOutflowsCents: missingDeliveryCostOrders === 0
-      ? revenueCents - purchaseCents - deliveryCostCents - expenseCents : null,
+      ? cashReceiptsCents - purchaseCents - deliveryCostCents - expenseCents : null,
     missingCostOrders, missingDeliveryCostOrders, estimatedCostOrders,
     sales: [...sales.values()],
   };
 }
 
 async function businessView(storage, products, orders, from, to) {
-  const [suppliers, materials, purchases, expenses, costings] = await Promise.all([
+  const [suppliers, materials, purchases, expenses, costings, bookings] = await Promise.all([
     records(storage, "suppliers/"), records(storage, "materials/"),
     records(storage, "purchases/"), records(storage, "expenses/"),
-    records(storage, "costings/"),
+    records(storage, "costings/"), records(storage, "bookings/"),
   ]);
   const { materialTotals, byProduct } = calculateCosts(materials, purchases, costings, products);
   return {
@@ -305,7 +312,7 @@ async function businessView(storage, products, orders, from, to) {
     costings,
     materialTotals,
     productCosts: [...byProduct.values()],
-    summary: financialSummary(orders, products, purchases, expenses, byProduct, from, to),
+    summary: financialSummary(orders, products, purchases, expenses, byProduct, from, to, bookings),
     distributions: orders.filter((order) => order.fulfillment === "delivery")
       .map((order) => ({
         id: order.id, number: order.number, createdAt: order.createdAt,

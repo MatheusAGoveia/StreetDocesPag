@@ -10,8 +10,10 @@ import {
   ArrowRight,
   ArrowUpRight,
   Bell,
+  CalendarDays,
   Check,
   ChevronDown,
+  ClipboardCheck,
   Clock3,
   CreditCard,
   CircleDollarSign,
@@ -26,6 +28,7 @@ import {
   Menu,
   Package,
   PackageCheck,
+  PartyPopper,
   Plus,
   RefreshCw,
   Search,
@@ -44,6 +47,7 @@ import {
 import { formatPrice, type Product, type StoreSettings } from "../catalog";
 import { api } from "./api";
 import BusinessApp, { BusinessOverview, type BusinessSection } from "./BusinessApp";
+import OperationsApp, { OperationsOverview, type OperationsSection } from "./OperationsApp";
 import "./admin.css";
 
 type Status =
@@ -90,7 +94,7 @@ type Dashboard = {
   settings: StoreSettings;
 };
 type Tab =
-  "overview" | "orders" | "products" | "inventory" | "customers" | "settings" | BusinessSection;
+  "overview" | "orders" | "products" | "inventory" | "customers" | "settings" | BusinessSection | OperationsSection;
 
 const tabs: { key: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "overview", label: "Visão geral", icon: LayoutDashboard },
@@ -98,6 +102,10 @@ const tabs: { key: Tab; label: string; icon: typeof LayoutDashboard }[] = [
   { key: "products", label: "Produtos", icon: Package },
   { key: "inventory", label: "Estoque", icon: Warehouse },
   { key: "customers", label: "Clientes", icon: Users },
+  { key: "bookings", label: "Encomendas", icon: ClipboardCheck },
+  { key: "events", label: "Eventos", icon: PartyPopper },
+  { key: "production", label: "Produção", icon: Factory },
+  { key: "agenda", label: "Agenda", icon: CalendarDays },
   { key: "finance", label: "Finanças", icon: CircleDollarSign },
   { key: "costing", label: "Custos e margens", icon: Factory },
   { key: "purchases", label: "Compras e insumos", icon: PackageCheck },
@@ -372,6 +380,7 @@ function Overview({
         </div>
       </div>
       <BusinessOverview onOpen={() => setTab("finance")} ordersRevision={ordersRevision} />
+      <OperationsOverview onOpen={() => setTab("agenda")} />
       <div className="overview-split">
         <section className="admin-panel chart-panel">
           <div className="panel-heading">
@@ -1811,6 +1820,7 @@ export default function AdminApp() {
         <nav className="sidebar-nav" aria-label="Navegação administrativa">
           {tabs.map(({ key, label, icon: Icon }) => (
             <div key={key}>
+              {key === "bookings" && <div className="sidebar-section-label sidebar-sub-label">PLANEJAMENTO</div>}
               {key === "finance" && <div className="sidebar-section-label sidebar-sub-label">NEGÓCIO</div>}
               {key === "settings" && <div className="sidebar-section-label sidebar-sub-label">SISTEMA</div>}
               <button className={tab === key ? "active" : ""} onClick={() => navigate(key)}>
@@ -1899,6 +1909,8 @@ export default function AdminApp() {
                 />
               )}
               {tab === "customers" && <Customers orders={data.orders} />}
+              {(["bookings", "events", "production", "agenda"] as Tab[]).includes(tab) &&
+                <OperationsApp key={tab} section={tab as OperationsSection} products={data.products} notify={setToast} />}
               {(["finance", "costing", "purchases", "suppliers", "distribution", "expenses"] as Tab[]).includes(tab) &&
                 <BusinessApp key={tab} section={tab as BusinessSection} products={data.products}
                   ordersRevision={ordersRevision}

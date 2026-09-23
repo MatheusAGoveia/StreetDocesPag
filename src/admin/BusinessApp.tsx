@@ -56,6 +56,7 @@ type BusinessData = {
   summary: {
     from: string; to: string; paidOrderCount: number;
     productRevenueCents: number; shippingRevenueCents: number; revenueCents: number;
+    planningReceiptsCents: number; cashReceiptsCents: number;
     cogsCents: number; deliveryCostCents: number; purchaseCents: number;
     expenseCents: number; profitCents: number | null;
     cashAfterOutflowsCents: number | null; missingCostOrders: number;
@@ -165,6 +166,8 @@ function Finance({ data, products, from, to, setFrom, setTo, onNavigate }: {
       ["Despesas operacionais", amountText(s.expenseCents)],
       ["Lucro operacional", s.profitCents === null ? "Incompleto" : amountText(s.profitCents)],
       ["Compras de insumos", amountText(s.purchaseCents)],
+      ["Sinais e parcelas de planejamentos", amountText(s.planningReceiptsCents)],
+      ["Entradas totais de caixa", amountText(s.cashReceiptsCents)],
       ["Fluxo líquido do período", s.cashAfterOutflowsCents === null ? "Incompleto" : amountText(s.cashAfterOutflowsCents)],
       ["Pedidos sem custo", s.missingCostOrders],
       ["Entregas sem custo do parceiro", s.missingDeliveryCostOrders],
@@ -199,11 +202,13 @@ function Finance({ data, products, from, to, setFrom, setTo, onNavigate }: {
     </section>
     <div className="business-metrics-grid">
       <Metric label="Receita recebida" value={formatPrice(s.revenueCents)} detail="Produtos + frete de pedidos pagos" tone="peach" />
+      <Metric label="Sinais e parcelas" value={formatPrice(s.planningReceiptsCents)} detail="Recebimentos de encomendas e eventos" />
+      <Metric label="Entradas totais de caixa" value={formatPrice(s.cashReceiptsCents)} detail="Pedidos pagos + recebimentos planejados" />
       <Metric label="Custo dos doces" value={formatPrice(s.cogsCents)} detail="Custo unitário × quantidade vendida" />
       <Metric label="Custo das entregas" value={formatPrice(s.deliveryCostCents)} detail="Valor pago aos parceiros" />
       <Metric label="Despesas" value={formatPrice(s.expenseCents)} detail="Gastos operacionais registrados" />
       <Metric label="Compras de insumos" value={formatPrice(s.purchaseCents)} detail="Saída de caixa; não descontada duas vezes do lucro" />
-      <Metric label="Fluxo líquido do período" value={s.cashAfterOutflowsCents === null ? "A apurar" : formatPrice(s.cashAfterOutflowsCents)} detail="Recebimentos − compras − entregas − despesas" tone="dark" />
+      <Metric label="Fluxo líquido do período" value={s.cashAfterOutflowsCents === null ? "A apurar" : formatPrice(s.cashAfterOutflowsCents)} detail="Entradas de caixa − compras − entregas − despesas" tone="dark" />
     </div>
     {s.estimatedCostOrders > 0 && <div className="business-callout"><CircleAlert size={19} />
       {s.estimatedCostOrders} {s.estimatedCostOrders === 1 ? "pedido antigo usa o custo atual como estimativa porque não tinha" : "pedidos antigos usam o custo atual como estimativa porque não tinham"} custo gravado na venda.

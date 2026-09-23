@@ -9,6 +9,7 @@ import {
 import { seedProducts, seedSettings } from "./seed.mjs";
 import { createPixPayload } from "./pix.mjs";
 import { BusinessError, handleBusinessApi, loadCostMap } from "./business.mjs";
+import { handlePlanningApi } from "./planning.mjs";
 
 const statuses = [
   "new",
@@ -670,6 +671,8 @@ export async function handleApi(request, storage, pathOverride) {
     if (path.startsWith("/api/admin/business"))
       return await handleBusinessApi(request, storage, path,
         () => catalogOf(storage), () => ordersOf(storage));
+    if (path.startsWith("/api/admin/planning"))
+      return await handlePlanningApi(request, storage, path, () => catalogOf(storage));
     if (path === "/api/admin/media" && method === "POST") {
       const form = await request.formData();
       const file = form.get("image");
