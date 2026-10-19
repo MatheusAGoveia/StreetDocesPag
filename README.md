@@ -10,7 +10,7 @@ npm run admin:setup -- --generate
 npm run dev
 ```
 
-O comando de configuração cria `.env.local` com e-mail, hash da senha e segredo de sessão. Ele mostra a senha gerada uma única vez; guarde-a. Para escolher sua própria senha, rode `npm run admin:setup -- --email=seu@email.com` e digite uma senha de pelo menos 12 caracteres. Reinicie o servidor depois de alterar as credenciais. Abra `http://127.0.0.1:5173/admin` para entrar.
+O comando de configuração cria `.env.local` com e-mail, hash da senha e segredo de sessão. Ele mostra a senha gerada uma única vez; guarde-a. Para escolher sua própria senha, rode `npm run admin:setup -- --email=seu@email.com` e digite uma senha de pelo menos 12 caracteres. Reinicie o servidor depois de alterar as credenciais. Abra ` para entrar.
 
 O ambiente local guarda catálogo, configurações, pedidos e fotos em uma pasta de dados fora da raiz servida pelo Vite, em `~/.street-doces/<identificador-do-projeto>`. O caminho pode ser definido com `STREET_DATA_DIR`. Não apague essa pasta sem antes fazer backup dos pedidos.
 Os dados locais são separados dos dados publicados na Vercel ou no Netlify; publicar o site não transfere pedidos locais automaticamente.
